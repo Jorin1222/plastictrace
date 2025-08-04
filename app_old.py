@@ -691,7 +691,7 @@ st.markdown(
         <hr style='border: 1px solid #c8e6c9; margin: 15px 0;'>
         <div style='color: #555; font-size: 14px;'>
             <p style='margin: 5px 0; font-weight: bold;'>© 2025 財團法人台灣產業服務基金會</p>
-            <p style='margin: 5px 0;'>Taiwan Industry Service Foundation</p>
+            <p style='margin: 5px 0;'>Foundation of Taiwan Industry Service </p>
             <p style='margin: 5px 0; font-size: 12px; color: #777;'>
                 版權所有，未經授權不得轉載或商業使用
             </p>

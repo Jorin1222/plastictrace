@@ -653,7 +653,7 @@ def main():
 
 # 版權聲明
 st.markdown("---")
-st.markdown("**© 2025 財團法人台灣產業服務基金會 Taiwan Industry Service Foundation**")
+st.markdown("**© 2025 財團法人台灣產業服務基金會 Foundation of Taiwan Industry Service**")
 
 # 主程式執行
 if __name__ == "__main__":
