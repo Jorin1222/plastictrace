@@ -15,10 +15,14 @@
 *.csv
 *.xlsx  
 *.xls
+*.json
+service_account.json
+.secrets.toml
 plastic_trace_data.csv
 data/
 records/
 backup/
+archive/
 ```
 
 ### 2. 資料分離架構
@@ -31,6 +35,31 @@ backup/
 2. GitHub：只上傳程式碼
 3. Streamlit Cloud：自動建立示範環境
 
+### 4. Google Sheets 服務帳號安全
+⚠️ **service_account.json 檔案包含敏感的Google Cloud認證資訊**
+
+#### 立即安全措施：
+- ✅ 檔案已加入 `.gitignore` 保護
+- ✅ 絕不上傳到 GitHub 或任何公開平台
+- ✅ 線上版本使用 Streamlit Secrets 機制
+
+#### 建議處理方式：
+1. **保留但移動到安全位置**：
+   ```bash
+   # 移到用戶配置目錄
+   mkdir -p ~/.config/plastic-trace/
+   mv service_account.json ~/.config/plastic-trace/
+   ```
+
+2. **完全刪除（如已設定 Streamlit Secrets）**：
+   ```bash
+   rm service_account.json
+   ```
+
+3. **定期輪換金鑰**：
+   - 在 Google Cloud Console 中重新生成服務帳號金鑰
+   - 刪除舊金鑰以提升安全性
+
 ## 🔧 如何確保資料安全
 
 ### 立即執行的安全檢查
@@ -38,18 +67,40 @@ backup/
 # 檢查哪些檔案被 Git 追蹤
 git ls-files
 
-# 確認資料檔案不在列表中
-# 如果看到 .csv 檔案，表示需要移除
+# 確認敏感檔案不在列表中
+git ls-files | grep -E "(\.csv|\.json|service_account)"
+
+# 檢查 .gitignore 設定
+cat .gitignore | grep -E "(service_account|\.json|\.csv)"
+
+# 確認目前狀態
+git status
 ```
 
 ### 移除已上傳的敏感檔案
 ```bash
 # 從 Git 追蹤中移除（但保留本地檔案）
 git rm --cached plastic_trace_data.csv
+git rm --cached service_account.json
 
 # 提交變更
 git commit -m "移除敏感資料檔案，加強安全防護"
 git push
+```
+
+### 安全處理 service_account.json
+```bash
+# 選項1：移動到安全位置（推薦）
+mkdir -p ~/.config/plastic-trace/
+mv service_account.json ~/.config/plastic-trace/
+
+# 選項2：完全刪除（如已設定Streamlit Secrets）
+rm service_account.json
+
+# 確認檔案已被忽略
+echo "service_account.json" >> .gitignore
+git add .gitignore
+git commit -m "更新.gitignore保護服務帳號檔案"
 ```
 
 ## 🌐 部署安全性
@@ -87,12 +138,16 @@ git push
 - [x] 更新 .gitignore 保護資料檔案
 - [x] 從 Git 移除已上傳的 CSV 檔案
 - [x] 建立安全的示範資料初始化機制
+- [x] 加入 service_account.json 保護設定
+- [x] 設定 Streamlit Secrets 機制
 
 ### 🔲 建議執行
+- [ ] 安全處理 service_account.json 檔案（移動或刪除）
 - [ ] 考慮將 GitHub 倉庫設為 Private
 - [ ] 定期檢查 `git ls-files` 確保無敏感檔案
 - [ ] 建立資料備份計畫
 - [ ] 設定存取權限控制（如需要）
+- [ ] 定期輪換 Google Cloud 服務帳號金鑰
 
 ## 📞 如有疑慮
 
