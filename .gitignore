@@ -49,6 +49,7 @@ backup/
 uploads/
 qr_codes/
 temp/
+archive/
 
 # 特定資料檔案
 plastic_trace_data.csv
