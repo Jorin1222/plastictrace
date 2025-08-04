@@ -12,13 +12,19 @@ import zipfile
 from io import BytesIO
 # 匯入新的資料管理器
 from data_manager import get_data_manager, load_data, save_data
+# 匯入現代化 UI 元件
+from modern_ui import apply_modern_css, create_header, create_status_bar, create_navigation_sidebar, create_quick_actions
 
 # 頁面配置
 st.set_page_config(
     page_title="ELV 廢塑膠產銷履歷示範平台",
     page_icon="♻️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# 應用現代化樣式
+apply_modern_css()
 
 # 預設帳號密碼 (實際使用時應存放在安全的地方)
 DEFAULT_USERS = {
@@ -70,16 +76,28 @@ def is_scan_page():
         return False
 
 def show_login_form():
-    """顯示登入表單"""
-    st.title("🔐 系統登入")
-    st.markdown("### 請輸入帳號密碼以使用系統功能")
+    """顯示現代化登入表單"""
+    # 應用樣式
+    apply_modern_css()
+    
+    # 頁首
+    create_header()
+    
+    st.markdown("""
+    <div class="custom-card" style="max-width: 400px; margin: 2rem auto;">
+        <h3 style="text-align: center; color: #1f2937; margin-bottom: 1.5rem;">🔐 系統登入</h3>
+    </div>
+    """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+        
         with st.form("login_form"):
+            st.markdown("### 請輸入帳號密碼")
             username = st.text_input("帳號", placeholder="請輸入帳號")
             password = st.text_input("密碼", type="password", placeholder="請輸入密碼")
-            login_button = st.form_submit_button("登入", type="primary")
+            login_button = st.form_submit_button("登入", type="primary", use_container_width=True)
             
             if login_button:
                 if login_user(username, password):
@@ -88,17 +106,38 @@ def show_login_form():
                 else:
                     st.error("❌ 帳號或密碼錯誤")
         
-        st.markdown("---")
-        st.info("""
-        **📋 測試帳號：**
-        - 管理員：admin / admin123
-        - 操作員：operator / op2024  
-        - 查看者：viewer / view2024
+        st.markdown('</div>', unsafe_allow_html=True)
         
-        **ℹ️ 說明：**
-        - 只有掃描QR碼進行資料登錄不需要登入
-        - 其他功能需要登入後才能使用
-        """)
+        # 測試帳號資訊卡片
+        st.markdown("""
+        <div class="feature-card" style="margin-top: 2rem;">
+            <h4 style="margin: 0 0 1rem 0; color: #1f2937;">📋 測試帳號</h4>
+            <div style="display: grid; gap: 0.5rem;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span><strong>管理員：</strong></span>
+                    <span>admin / admin123</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span><strong>操作員：</strong></span>
+                    <span>operator / op2024</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span><strong>查看者：</strong></span>
+                    <span>viewer / view2024</span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="custom-card" style="margin-top: 1rem; background: #f0f9ff;">
+            <p style="margin: 0; color: #0369a1; text-align: center;">
+                <strong>ℹ️ 說明：</strong><br>
+                只有掃描QR碼進行資料登錄不需要登入<br>
+                其他功能需要登入後才能使用
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 # 初始化資料檔案
 def init_data_file():
@@ -259,174 +298,316 @@ def show_scan_interface():
                         st.error("請輸入操作人員姓名")
 
 def show_main_interface():
-    """顯示主要功能介面（需要登入）"""
-    # 主標題和使用者資訊
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.title("♻️ ELV 廢塑膠產銷履歷示範平台")
+    """顯示現代化主要功能介面"""
+    # 應用現代化樣式
+    apply_modern_css()
+    
+    # 創建頁首
+    create_header()
+    
+    # 用戶資訊和登出按鈕
+    col1, col2 = st.columns([4, 1])
     with col2:
-        st.success(f"👤 {st.session_state.get('username', 'User')} ({get_user_role()})")
-        if st.button("登出"):
+        username = st.session_state.get('username', 'User')
+        user_role = st.session_state.get('user_role', 'guest')
+        role_colors = {'admin': '🔴', 'operator': '🔵', 'viewer': '⚪'}
+        role_icon = role_colors.get(user_role, '⚫')
+        
+        st.markdown(f"""
+        <div class="custom-card" style="text-align: center; padding: 1rem;">
+            <div style="color: #1f2937; font-weight: 600;">{role_icon} {username}</div>
+            <div style="color: #6b7280; font-size: 0.875rem;">{user_role}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("登出", type="secondary", use_container_width=True):
             logout_user()
             st.rerun()
 
-    # 🔒 資料安全提醒 + 部署狀態
-    col1, col2, col3 = st.columns([2, 2, 1])
-    with col1:
-        if os.path.exists(DATA_FILE):
-            st.success("🔐 使用本地資料（安全模式）")
-        else:
-            st.info("🧪 首次使用，將建立示範資料")
-
-    with col2:
-        # 檢查部署環境
-        def is_streamlit_cloud():
-            """檢查是否在 Streamlit Cloud 環境"""
-            return (
-                os.getenv('STREAMLIT_SHARING_MODE') is not None or
-                os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
-                'streamlit.app' in os.getenv('SERVER_NAME', '') or
-                not os.getenv('COMPUTERNAME')  # Windows 本地環境會有這個變數
-            )
-        
-        if is_streamlit_cloud():
-            st.success("🌐 線上版本 (Streamlit Cloud)")
-            st.caption("QR碼可全球掃描使用")
-        else:
-            st.warning("🏠 本地版本")
-            st.caption("QR碼僅限區網使用")
-            
-    with col3:
-        if st.button("🔍 狀態"):
-            try:
-                # 獲取資料管理器資訊
-                dm = get_data_manager()
-                storage_info = dm.get_storage_info()
-                
-                if 'STREAMLIT_SERVER_PORT' in os.environ:
-                    storage_status = "✅ Google Sheets 持久化" if storage_info["sheets_available"] else "⚠️ 暫時性存儲"
-                    st.info(f"""
-                    **🌐 線上部署狀態：**
-                    - ✅ 全球存取
-                    - ✅ 手機可掃描QR碼
-                    - {storage_status}
-                    - 🔗 網址：plastictracetest.streamlit.app
-                    """)
-                else:
-                    storage_status = "✅ Google Sheets + 本地備份" if storage_info["sheets_available"] else "📁 本地 CSV 存儲"
-                    st.info(f"""
-                    **🏠 本地開發狀態：**
-                    - ✅ 區網內可用
-                    - {storage_status}
-                    - 💡 建議部署到 Streamlit Cloud
-                    """)
-                
-                # 顯示 Google Sheets 連結（如果可用）
-                if storage_info.get("sheet_url"):
-                    st.markdown(f"📊 [查看 Google Sheets]({storage_info['sheet_url']})")
-                    
-            except:
-                st.info("開發環境狀態檢查")
-
+    # 系統狀態卡片
+    st.markdown("### 📊 系統狀態")
+    create_status_bar()
+    
     st.markdown("---")
 
-    # 側邊欄選單
-    st.sidebar.title("功能選單")
+    # 側邊欄導航
+    selected_menu = create_navigation_sidebar()
     
-    # 根據角色顯示不同功能
-    user_role = get_user_role()
+    # 如果沒有選擇功能，顯示歡迎頁面
+    if not selected_menu and not st.session_state.get('current_page'):
+        show_welcome_dashboard()
+    else:
+        # 更新當前頁面
+        if selected_menu:
+            st.session_state['current_page'] = selected_menu
+        
+        # 根據選擇的功能顯示對應介面
+        current_page = st.session_state.get('current_page', '歡迎頁面')
+        
+        if current_page == "QR碼產生與管理":
+            show_qr_management()
+        elif current_page == "掃描登錄資料":
+            show_scan_interface()
+        elif current_page == "履歷查詢":
+            show_query_interface()
+        elif current_page == "資料下載":
+            show_download_interface()
+        elif current_page == "系統管理":
+            show_admin_interface()
+
+def show_welcome_dashboard():
+    """顯示歡迎儀表板"""
+    st.markdown("### 🏠 歡迎使用 ELV 廢塑膠產銷履歷示範平台")
     
-    if user_role == 'admin':
-        menu_options = ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載", "系統管理"]
-    elif user_role == 'operator':
-        menu_options = ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載"]
-    else:  # viewer
-        menu_options = ["履歷查詢", "資料下載"]
+    # 快速操作
+    create_quick_actions()
     
-    menu = st.sidebar.selectbox("選擇功能", menu_options)
+    # 處理快速操作
+    if st.session_state.get('quick_action'):
+        action = st.session_state['quick_action']
+        if action == 'new_qr':
+            st.session_state['current_page'] = "QR碼產生與管理"
+            st.rerun()
+        elif action == 'view_stats':
+            show_system_overview()
+        elif action == 'sync_data':
+            dm = get_data_manager()
+            if dm.use_sheets:
+                dm.sync_to_sheets()
+            else:
+                st.info("📁 本地模式不需要同步")
+        del st.session_state['quick_action']
     
-    # 功能路由
-    if menu == "QR碼產生與管理":
-        show_qr_management()
-    elif menu == "掃描登錄資料":
-        show_scan_interface()
-    elif menu == "履歷查詢":
-        show_query_interface()
-    elif menu == "資料下載":
-        show_download_interface()
-    elif menu == "系統管理":
-        show_admin_interface()
+    st.markdown("---")
+    
+    # 系統概覽
+    show_system_overview()
+    
+    # 最近活動
+    show_recent_activities()
+
+def show_system_overview():
+    """顯示系統概覽"""
+    st.markdown("### � 系統概覽")
+    
+    df = load_data()
+    
+    if df.empty:
+        st.markdown("""
+        <div class="custom-card" style="text-align: center; padding: 3rem;">
+            <h3 style="color: #6b7280; margin: 0;">📊 尚無資料</h3>
+            <p style="color: #9ca3af; margin: 1rem 0;">開始建立您的第一個 QR 碼吧！</p>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 階段統計
+        st.markdown("#### 🔄 處理階段統計")
+        stage_counts = df['stage'].value_counts()
+        
+        for stage, count in stage_counts.items():
+            percentage = (count / len(df)) * 100
+            st.markdown(f"""
+            <div class="custom-card" style="margin-bottom: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: 500;">{stage}</span>
+                    <span style="color: #3b82f6; font-weight: 600;">{count} 筆 ({percentage:.1f}%)</span>
+                </div>
+                <div style="background: #e5e7eb; border-radius: 4px; height: 6px; margin-top: 0.5rem;">
+                    <div style="background: #3b82f6; height: 100%; border-radius: 4px; width: {percentage}%;"></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    with col2:
+        # QR 碼狀態
+        st.markdown("#### 🏷️ QR 碼狀態")
+        qr_codes = df[df['stage'] == '初始建立']['qr_id'].nunique()
+        active_qrs = df[df['stage'] != '初始建立']['qr_id'].nunique()
+        
+        st.markdown(f"""
+        <div class="custom-card">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                <span>總 QR 碼數量</span>
+                <span style="font-weight: 600; color: #1f2937;">{qr_codes}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 1rem;">
+                <span>活躍 QR 碼</span>
+                <span style="font-weight: 600; color: #059669;">{active_qrs}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>使用率</span>
+                <span style="font-weight: 600; color: #3b82f6;">{(active_qrs/qr_codes*100) if qr_codes > 0 else 0:.1f}%</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+def show_recent_activities():
+    """顯示最近活動"""
+    st.markdown("### 📱 最近活動")
+    
+    df = load_data()
+    
+    if df.empty:
+        st.info("📭 暫無活動記錄")
+        return
+    
+    # 取最近 5 筆記錄
+    recent_df = df.sort_values('timestamp', ascending=False).head(5)
+    
+    for _, row in recent_df.iterrows():
+        time_str = row['timestamp']
+        stage_colors = {
+            '初始建立': '#10b981',
+            '出廠': '#3b82f6',
+            '運輸': '#f59e0b',
+            '再生處理': '#8b5cf6',
+            '產品製造': '#ef4444',
+            '銷售': '#06b6d4'
+        }
+        
+        color = stage_colors.get(row['stage'], '#6b7280')
+        
+        st.markdown(f"""
+        <div class="custom-card" style="border-left: 4px solid {color};">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight: 600; color: #1f2937;">{row['stage']} - {row['qr_id']}</div>
+                    <div style="color: #6b7280; font-size: 0.875rem;">操作員: {row['operator']}</div>
+                </div>
+                <div style="text-align: right; color: #6b7280; font-size: 0.875rem;">
+                    {time_str}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 def show_qr_management():
-    """QR碼產生與管理功能"""
-    st.header("🏷️ QR碼產生與管理")
+    """現代化 QR 碼產生與管理功能"""
+    st.markdown("## 🏷️ QR 碼產生與管理")
     
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.subheader("產生新的QR碼")
-        batch_name = st.text_input("批次名稱", placeholder="例：廢塑膠批次-001")
+        st.markdown("""
+        <div class="custom-card">
+            <h3 style="margin: 0 0 1rem 0; color: #1f2937;">✨ 產生新的 QR 碼</h3>
+        </div>
+        """, unsafe_allow_html=True)
         
-        if st.button("產生QR碼", type="primary"):
-            if batch_name:
-                # 產生唯一ID
-                qr_id = str(uuid.uuid4())[:8].upper()
-                
-                # 產生包含自動偵測網址的QR碼
-                qr_buffer, qr_url = generate_qr_code(qr_id)
-                
-                # 顯示QR碼
-                st.image(qr_buffer, caption=f"QR碼 ID: {qr_id}", width=200)
-                
-                # 顯示QR碼包含的網址
-                st.code(qr_url, language="text")
-                
-                # 根據環境顯示不同的說明
-                if "streamlit.app" in qr_url:
-                    st.success("🌐 **線上版本QR碼** - 任何地方都可掃描使用！")
-                    st.caption("📱 用手機掃描此QR碼可直接跳轉到資料登錄頁面")
-                else:
-                    st.info("🏠 **本地版本QR碼** - 僅限此電腦網路環境使用")
-                    st.caption("📡 部署到 Streamlit Cloud 後將自動產生公開版本")
-                
-                # 提供下載連結
-                st.markdown(
-                    get_download_link(qr_buffer, f"QR_{qr_id}_{batch_name}.png", "📥 下載QR碼"),
-                    unsafe_allow_html=True
-                )
-                
-                # 將基本資訊存入資料庫
-                df = load_data()
-                new_record = {
-                    'qr_id': qr_id,
-                    'batch_name': batch_name,
-                    'stage': '初始建立',
-                    'operator': f'{st.session_state.get("username", "系統")} (QR碼產生)',
-                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'weight_kg': '',
-                    'source': '',
-                    'destination': '',
-                    'product_model': '',
-                    'notes': f'QR碼已建立，批次：{batch_name}',
-                    'location': ''
-                }
-                df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
-                save_data(df)
-                
-                st.success(f"✅ QR碼已產生！ID: {qr_id}")
-            else:
-                st.error("請輸入批次名稱")
+        with st.container():
+            batch_name = st.text_input(
+                "批次名稱", 
+                placeholder="例：廢塑膠批次-001",
+                help="為您的批次命名，便於後續追蹤"
+            )
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🎯 產生 QR 碼", type="primary", use_container_width=True):
+                    if batch_name:
+                        # 產生唯一ID
+                        qr_id = str(uuid.uuid4())[:8].upper()
+                        
+                        # 產生包含自動偵測網址的QR碼
+                        qr_buffer, qr_url = generate_qr_code(qr_id)
+                        
+                        # QR 碼展示區域
+                        st.markdown(f"""
+                        <div class="qr-display">
+                            <h4 style="margin: 0 0 1rem 0;">🎉 QR 碼已生成！</h4>
+                            <p style="margin: 0 0 1rem 0; color: #6b7280;">QR 碼 ID: <strong>{qr_id}</strong></p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # 顯示QR碼
+                        st.image(qr_buffer, caption=f"QR碼 ID: {qr_id}", width=200)
+                        
+                        # 顯示QR碼包含的網址
+                        st.code(qr_url, language="text")
+                        
+                        # 根據環境顯示不同的說明
+                        if "streamlit.app" in qr_url:
+                            st.success("🌐 **線上版本QR碼** - 任何地方都可掃描使用！")
+                            st.caption("📱 用手機掃描此QR碼可直接跳轉到資料登錄頁面")
+                        else:
+                            st.info("🏠 **本地版本QR碼** - 僅限此電腦網路環境使用")
+                            st.caption("📡 部署到 Streamlit Cloud 後將自動產生公開版本")
+                        
+                        # 提供下載連結
+                        st.markdown(
+                            get_download_link(qr_buffer, f"QR_{qr_id}_{batch_name}.png", "📥 下載QR碼"),
+                            unsafe_allow_html=True
+                        )
+                        
+                        # 將基本資訊存入資料庫
+                        df = load_data()
+                        new_record = {
+                            'qr_id': qr_id,
+                            'batch_name': batch_name,
+                            'stage': '初始建立',
+                            'operator': f'{st.session_state.get("username", "系統")} (QR碼產生)',
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'weight_kg': '',
+                            'source': '',
+                            'destination': '',
+                            'product_model': '',
+                            'notes': f'QR碼已建立，批次：{batch_name}',
+                            'location': ''
+                        }
+                        df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+                        save_data(df)
+                        
+                        st.success(f"✅ QR碼已產生！ID: {qr_id}")
+                    else:
+                        st.error("請輸入批次名稱")
+            
+            with col_b:
+                st.markdown("""
+                <div class="feature-card">
+                    <h4 style="margin: 0 0 0.5rem 0;">💡 小提示</h4>
+                    <ul style="margin: 0; padding-left: 1rem; color: #6b7280;">
+                        <li>建議使用有意義的批次名稱</li>
+                        <li>QR碼ID會自動生成</li>
+                        <li>可直接用手機掃描測試</li>
+                    </ul>
+                </div>
+                """, unsafe_allow_html=True)
     
     with col2:
-        st.subheader("已建立的QR碼")
+        st.markdown("""
+        <div class="custom-card">
+            <h3 style="margin: 0 0 1rem 0; color: #1f2937;">📋 已建立的 QR 碼</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        
         df = load_data()
         qr_codes = df[df['stage'] == '初始建立'][['qr_id', 'batch_name', 'timestamp']].drop_duplicates()
         
         if not qr_codes.empty:
-            st.dataframe(qr_codes, use_container_width=True)
+            # 顯示QR碼列表
+            for _, row in qr_codes.iterrows():
+                st.markdown(f"""
+                <div class="custom-card" style="margin-bottom: 0.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: 600; color: #1f2937;">{row['qr_id']}</div>
+                            <div style="color: #6b7280; font-size: 0.875rem;">{row['batch_name']}</div>
+                        </div>
+                        <div style="color: #6b7280; font-size: 0.75rem;">
+                            {row['timestamp'][:10]}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            # 添加QR碼下載功能
-            st.subheader("下載已建立的QR碼")
+            st.markdown("---")
+            
+            # 下載功能區域
+            st.markdown("### 📥 下載 QR 碼")
             
             # 選擇要下載的QR碼
             selected_qr = st.selectbox(
@@ -438,7 +619,7 @@ def show_qr_management():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                if st.button("📥 下載單個QR碼", type="secondary"):
+                if st.button("📥 下載單個QR碼", type="secondary", use_container_width=True):
                     if selected_qr:
                         # 產生選中的QR碼
                         qr_buffer, qr_url = generate_qr_code(selected_qr)
@@ -456,7 +637,7 @@ def show_qr_management():
                         st.info(f"🔗 QR碼網址：{qr_url}")
             
             with col_b:
-                if st.button("📦 批量下載所有QR碼", type="secondary"):
+                if st.button("📦 批量下載所有QR碼", type="secondary", use_container_width=True):
                     # 建立一個臨時的zip檔案來包含所有QR碼
                     import zipfile
                     from io import BytesIO
@@ -492,12 +673,18 @@ ID: {qr_id}
                         label="📦 下載所有QR碼 (ZIP)",
                         data=zip_buffer.getvalue(),
                         file_name=f"所有QR碼_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                        mime="application/zip"
+                        mime="application/zip",
+                        use_container_width=True
                     )
                     
                     st.success(f"✅ 已準備 {len(qr_codes)} 個QR碼的ZIP檔案")
         else:
-            st.info("尚未建立任何QR碼")
+            st.markdown("""
+            <div class="custom-card" style="text-align: center; padding: 2rem;">
+                <h4 style="color: #6b7280; margin: 0;">📋 尚未建立任何QR碼</h4>
+                <p style="color: #9ca3af; margin: 1rem 0 0 0;">開始建立您的第一個QR碼吧！</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 def show_query_interface():
     """履歷查詢功能"""
@@ -849,7 +1036,7 @@ def main():
 
 # 版權聲明
 st.markdown("---")
-st.markdown("**© 2025 財團法人台灣產業服務基金會 Taiwan Industry Service Foundation**")
+st.markdown("**© 2025 財團法人台灣產業服務基金會 Foundation of Taiwan Industry Service**")
 
 # 主程式執行
 if __name__ == "__main__":
