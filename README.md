@@ -58,7 +58,8 @@ streamlit run app.py
 ```
 
 ### 線上版本
-- 🌐 **Streamlit Cloud**: [即將部署]
+- 🌐 **GitHub 倉庫**: https://github.com/Jorin1222/plastictrace
+- 🚀 **Streamlit Cloud**: [點此部署](https://share.streamlit.io/new?repo=Jorin1222/plastictrace)
 - 📱 支援手機、平板、電腦存取
 - 🔄 自動同步 GitHub 更新
 
