@@ -37,15 +37,21 @@ def load_data():
 def save_data(df):
     df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
-# 產生QR碼
-def generate_qr_code(qr_id):
+# 產生QR碼 - 包含網址連結
+def generate_qr_code(qr_id, base_url="http://localhost:8501"):
+    """
+    產生可掃描的QR碼，包含直接跳轉到登錄頁面的網址
+    """
+    # 構建完整的網址，包含QR碼ID參數
+    full_url = f"{base_url}/?qr_id={qr_id}&page=scan"
+    
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=10,
         border=4,
     )
-    qr.add_data(qr_id)
+    qr.add_data(full_url)
     qr.make(fit=True)
     
     img = qr.make_image(fill_color="black", back_color="white")
@@ -54,7 +60,7 @@ def generate_qr_code(qr_id):
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
-    return buf
+    return buf, full_url
 
 # 產生下載連結
 def get_download_link(file_buffer, filename, text):
@@ -86,10 +92,27 @@ st.markdown("---")
 
 # 側邊欄選單
 st.sidebar.title("功能選單")
-menu = st.sidebar.selectbox(
-    "選擇功能",
-    ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載", "系統管理"]
-)
+
+# 檢查是否透過QR碼掃描進入
+try:
+    qr_id_from_url = st.query_params.get("qr_id", "")
+    page_from_url = st.query_params.get("page", "")
+    
+    if qr_id_from_url and page_from_url == "scan":
+        # 如果是透過QR碼掃描進入，直接跳轉到掃描登錄頁面
+        menu = "掃描登錄資料"
+        st.sidebar.success(f"🔍 掃描QR碼: {qr_id_from_url}")
+        st.sidebar.info("已自動跳轉到資料登錄頁面")
+    else:
+        menu = st.sidebar.selectbox(
+            "選擇功能",
+            ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載", "系統管理"]
+        )
+except:
+    menu = st.sidebar.selectbox(
+        "選擇功能",
+        ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載", "系統管理"]
+    )
 
 # QR碼產生與管理
 if menu == "QR碼產生與管理":
@@ -106,11 +129,22 @@ if menu == "QR碼產生與管理":
                 # 產生唯一ID
                 qr_id = str(uuid.uuid4())[:8].upper()
                 
-                # 產生QR碼
-                qr_buffer = generate_qr_code(qr_id)
+                # 取得當前網址基底（如果在 Streamlit Cloud 上會自動偵測）
+                try:
+                    # 嘗試從 Streamlit 取得當前網址
+                    base_url = st.query_params.get('base_url', 'http://localhost:8501')
+                except:
+                    base_url = 'http://localhost:8501'
+                
+                # 產生包含網址的QR碼
+                qr_buffer, qr_url = generate_qr_code(qr_id, base_url)
                 
                 # 顯示QR碼
                 st.image(qr_buffer, caption=f"QR碼 ID: {qr_id}", width=200)
+                
+                # 顯示QR碼包含的網址
+                st.code(qr_url, language="text")
+                st.caption("📱 掃描此QR碼可直接跳轉到資料登錄頁面")
                 
                 # 提供下載連結
                 st.markdown(
@@ -158,7 +192,21 @@ elif menu == "掃描登錄資料":
     
     with col1:
         st.subheader("輸入QR碼資訊")
-        qr_id_input = st.text_input("QR碼 ID", placeholder="輸入或掃描獲得的QR碼ID").upper()
+        
+        # 檢查是否從QR碼掃描進入
+        try:
+            default_qr_id = st.query_params.get("qr_id", "").upper()
+        except:
+            default_qr_id = ""
+        
+        qr_id_input = st.text_input(
+            "QR碼 ID", 
+            value=default_qr_id,
+            placeholder="輸入或掃描獲得的QR碼ID"
+        ).upper()
+        
+        if default_qr_id:
+            st.success(f"🔍 已從QR碼掃描自動填入: {default_qr_id}")
         
         # 驗證QR碼是否存在
         df = load_data()
@@ -400,13 +448,24 @@ elif menu == "系統管理":
         5. **行動支援：** 支援手機、平板、電腦操作
         """)
 
-# 頁尾
+# 頁尾版權聲明
 st.markdown("---")
 st.markdown(
     """
-    <div style='text-align: center; color: #666;'>
-        <p>🌱 ELV 廢塑膠產銷履歷示範平台 | 促進循環經濟，提升可追溯性</p>
-        <p>💚 為未來歐盟ELV廢塑膠再利用政策接軌做準備</p>
+    <div style='text-align: center; padding: 20px; background-color: #f0f8f5; border-radius: 10px; margin-top: 30px;'>
+        <div style='color: #2e7d32; margin-bottom: 10px;'>
+            <h4 style='margin: 0; color: #1b5e20;'>🌱 ELV 廢塑膠產銷履歷示範平台</h4>
+            <p style='margin: 5px 0; color: #388e3c;'>促進循環經濟，提升可追溯性</p>
+            <p style='margin: 5px 0; color: #388e3c;'>💚 為未來歐盟ELV廢塑膠再利用政策接軌做準備</p>
+        </div>
+        <hr style='border: 1px solid #c8e6c9; margin: 15px 0;'>
+        <div style='color: #555; font-size: 14px;'>
+            <p style='margin: 5px 0; font-weight: bold;'>© 2025 財團法人台灣產業服務基金會</p>
+            <p style='margin: 5px 0;'>Taiwan Industry Service Foundation</p>
+            <p style='margin: 5px 0; font-size: 12px; color: #777;'>
+                版權所有，未經授權不得轉載或商業使用
+            </p>
+        </div>
     </div>
     """, 
     unsafe_allow_html=True
