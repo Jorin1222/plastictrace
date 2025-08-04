@@ -27,7 +27,23 @@ class GoogleSheetsManager:
             if self.is_streamlit_cloud():
                 # 從 Streamlit secrets 獲取認證資訊
                 if "gcp_service_account" in st.secrets:
+                    st.info("🔍 正在使用 Streamlit Cloud Secrets 進行認證...")
                     creds_dict = dict(st.secrets["gcp_service_account"])
+                    
+                    # 驗證必要的欄位
+                    required_fields = ["type", "project_id", "private_key", "client_email"]
+                    missing_fields = [field for field in required_fields if field not in creds_dict]
+                    
+                    if missing_fields:
+                        st.error(f"❌ Streamlit Secrets 缺少必要欄位: {', '.join(missing_fields)}")
+                        return False
+                    
+                    # 檢查私鑰格式
+                    private_key = creds_dict.get("private_key", "")
+                    if not private_key.startswith("-----BEGIN PRIVATE KEY-----"):
+                        st.error("❌ 私鑰格式錯誤，請確認包含完整的 BEGIN/END 標記")
+                        return False
+                    
                     creds = Credentials.from_service_account_info(
                         creds_dict,
                         scopes=[
@@ -35,12 +51,20 @@ class GoogleSheetsManager:
                             "https://www.googleapis.com/auth/drive"
                         ]
                     )
+                    st.success("✅ Streamlit Cloud 認證成功")
                 else:
-                    st.error("❌ 請在 Streamlit Cloud 設定 Google Sheets 認證")
+                    st.error("❌ 在 Streamlit Cloud Secrets 中找不到 'gcp_service_account' 設定")
+                    st.info("""
+                    請在 Streamlit Cloud 設定中添加 Google Sheets 認證：
+                    1. 前往應用程式設定頁面
+                    2. 點擊 'Secrets' 頁籤
+                    3. 添加 gcp_service_account 設定
+                    """)
                     return False
             else:
                 # 本地開發環境：從檔案讀取
                 if os.path.exists("service_account.json"):
+                    st.info("🔍 正在使用本地 service_account.json 進行認證...")
                     creds = Credentials.from_service_account_file(
                         "service_account.json",
                         scopes=[
@@ -48,8 +72,15 @@ class GoogleSheetsManager:
                             "https://www.googleapis.com/auth/drive"
                         ]
                     )
+                    st.success("✅ 本地認證檔案讀取成功")
                 else:
-                    st.warning("⚠️ 本地環境找不到 Google Sheets 認證檔案，將使用本地 CSV")
+                    st.warning("⚠️ 本地環境找不到 service_account.json，將使用本地 CSV")
+                    st.info("""
+                    如要使用 Google Sheets，請：
+                    1. 下載服務帳號 JSON 檔案
+                    2. 重新命名為 service_account.json
+                    3. 放置在專案根目錄
+                    """)
                     return False
             
             self.gc = gspread.authorize(creds)
@@ -57,17 +88,52 @@ class GoogleSheetsManager:
             return True
             
         except Exception as e:
-            st.error(f"❌ Google Sheets 認證失敗：{str(e)}")
+            error_msg = str(e)
+            st.error(f"❌ Google Sheets 認證失敗：{error_msg}")
+            
+            # 提供具體的錯誤診斷
+            if "No such file or directory" in error_msg:
+                st.info("💡 檔案不存在，請檢查認證檔案路徑")
+            elif "invalid_grant" in error_msg:
+                st.info("💡 認證金鑰無效，請重新下載服務帳號金鑰")
+            elif "insufficient authentication scopes" in error_msg:
+                st.info("💡 權限範圍不足，請檢查 API 範圍設定")
+            elif "API has not been used" in error_msg:
+                st.info("💡 請確認已啟用 Google Sheets API 和 Google Drive API")
+            elif "private_key" in error_msg:
+                st.info("💡 私鑰格式問題，請檢查換行符號是否正確")
+            
             return False
     
     def is_streamlit_cloud(self):
         """檢查是否在 Streamlit Cloud 環境"""
-        return (
-            os.getenv('STREAMLIT_SHARING_MODE') is not None or
-            os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
-            'streamlit.app' in os.getenv('SERVER_NAME', '') or
-            not os.getenv('COMPUTERNAME')  # Windows 本地環境會有這個變數
+        # 詳細的環境檢測
+        env_indicators = {
+            'STREAMLIT_SHARING_MODE': os.getenv('STREAMLIT_SHARING_MODE'),
+            'HOSTNAME': os.getenv('HOSTNAME', ''),
+            'SERVER_NAME': os.getenv('SERVER_NAME', ''),
+            'COMPUTERNAME': os.getenv('COMPUTERNAME'),
+            'HOME': os.getenv('HOME', ''),
+            'USER': os.getenv('USER', ''),
+        }
+        
+        # 判斷是否為 Streamlit Cloud
+        is_cloud = (
+            env_indicators['STREAMLIT_SHARING_MODE'] is not None or
+            env_indicators['HOSTNAME'].endswith('.streamlit.app') or
+            'streamlit.app' in env_indicators['SERVER_NAME'] or
+            env_indicators['COMPUTERNAME'] is None or  # 非 Windows 環境
+            '/app' in env_indicators['HOME']  # 容器環境
         )
+        
+        # 調試資訊（僅在測試時顯示）
+        if st.session_state.get('show_env_debug', False):
+            st.write("🔍 環境變數診斷:")
+            for key, value in env_indicators.items():
+                st.write(f"   {key}: {value}")
+            st.write(f"   判斷結果: {'Streamlit Cloud' if is_cloud else '本地環境'}")
+        
+        return is_cloud
     
     def setup_spreadsheet(self):
         """設置或創建 Google Sheets"""

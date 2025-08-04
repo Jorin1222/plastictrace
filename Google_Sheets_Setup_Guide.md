@@ -121,6 +121,47 @@ client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/your-s
 ### Streamlit Cloud 問題
 - 確認 Secrets 設定正確
 - 檢查私鑰格式（需要包含換行符號 `\n`）
+- 驗證所有必要欄位都已設定：`type`, `project_id`, `private_key`, `client_email`
+- 確保私鑰包含完整的 BEGIN/END 標記
+- 檢查服務帳號是否有足夠權限
+
+### 常見的 Streamlit Cloud Secrets 設定錯誤
+
+1. **私鑰格式錯誤**
+   ```toml
+   # ❌ 錯誤：缺少換行符號
+   private_key = "-----BEGIN PRIVATE KEY-----MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC..."
+   
+   # ✅ 正確：包含換行符號
+   private_key = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC...\n-----END PRIVATE KEY-----\n"
+   ```
+
+2. **遺漏必要欄位**
+   ```toml
+   # 確保包含所有必要欄位
+   [gcp_service_account]
+   type = "service_account"
+   project_id = "your-project-id"
+   private_key_id = "key-id"
+   private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+   client_email = "service-account@project.iam.gserviceaccount.com"
+   client_id = "client-id"
+   auth_uri = "https://accounts.google.com/o/oauth2/auth"
+   token_uri = "https://oauth2.googleapis.com/token"
+   auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+   client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
+   ```
+
+3. **服務帳號權限不足**
+   - 確認服務帳號已被加入 Google Sheets 的編輯者
+   - 檢查 Google Drive API 是否已啟用
+
+### 🔧 線上除錯步驟
+
+1. **前往應用程式的系統管理 → Google Sheets 頁籤**
+2. **點擊「環境診斷」按鈕**查看環境變數
+3. **點擊「測試 Google Sheets 連接」**查看具體錯誤訊息
+4. **根據錯誤訊息調整 Streamlit Cloud Secrets 設定**
 
 ## 📈 效益
 

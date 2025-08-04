@@ -717,6 +717,39 @@ def show_admin_interface():
         with col2:
             st.write("**管理操作：**")
             
+            # 環境診斷
+            if st.button("🔍 環境診斷"):
+                st.session_state['show_env_debug'] = True
+                dm_new = get_data_manager()
+                st.session_state['show_env_debug'] = False
+                
+                # 顯示詳細的環境資訊
+                env_info = {
+                    'STREAMLIT_SHARING_MODE': os.getenv('STREAMLIT_SHARING_MODE'),
+                    'HOSTNAME': os.getenv('HOSTNAME', ''),
+                    'SERVER_NAME': os.getenv('SERVER_NAME', ''),
+                    'HOME': os.getenv('HOME', ''),
+                    'USER': os.getenv('USER', ''),
+                }
+                
+                st.write("**環境變數：**")
+                for key, value in env_info.items():
+                    if value:
+                        st.write(f"   {key}: {value}")
+                    else:
+                        st.write(f"   {key}: (未設定)")
+                
+                # 檢查 Secrets
+                if hasattr(st, 'secrets'):
+                    if "gcp_service_account" in st.secrets:
+                        st.success("✅ 找到 gcp_service_account secrets")
+                        # 顯示 secrets 的欄位（不顯示實際值）
+                        secrets_keys = list(st.secrets["gcp_service_account"].keys())
+                        st.write(f"   可用欄位: {', '.join(secrets_keys)}")
+                    else:
+                        st.error("❌ 找不到 gcp_service_account secrets")
+                        st.write("   可用的 secrets:", list(st.secrets.keys()) if hasattr(st.secrets, 'keys') else "無")
+            
             # 測試連接
             if st.button("🔍 測試 Google Sheets 連接"):
                 if storage_info["sheets_available"]:
