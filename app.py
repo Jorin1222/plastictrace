@@ -64,6 +64,24 @@ def get_download_link(file_buffer, filename, text):
 
 # 主標題
 st.title("♻️ ELV 廢塑膠產銷履歷示範平台")
+
+# 🔒 資料安全提醒
+col1, col2 = st.columns([3, 1])
+with col1:
+    if os.path.exists(DATA_FILE):
+        st.success("🔐 使用本地資料（安全模式）")
+    else:
+        st.info("🧪 首次使用，將建立示範資料")
+        
+with col2:
+    if st.button("🔍 安全狀態"):
+        st.info("""
+        **資料安全說明：**
+        - ✅ 真實資料只存在您的電腦
+        - ✅ GitHub 只有程式碼
+        - ✅ Streamlit Cloud 只有示範功能
+        """)
+
 st.markdown("---")
 
 # 側邊欄選單
