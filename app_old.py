@@ -23,9 +23,6 @@ DEFAULT_USERS = {
     "viewer": "view2024"
 }
 
-# 資料檔案路徑
-DATA_FILE = "plastic_trace_data.csv"
-
 # 登入檢查函數
 def check_login():
     """檢查是否已登入"""
@@ -55,15 +52,6 @@ def logout_user():
     st.session_state['logged_in'] = False
     st.session_state['username'] = ''
     st.session_state['user_role'] = 'guest'
-
-def is_scan_page():
-    """檢查是否為掃描登錄頁面"""
-    try:
-        qr_id_from_url = st.query_params.get("qr_id", "")
-        page_from_url = st.query_params.get("page", "")
-        return qr_id_from_url and page_from_url == "scan"
-    except:
-        return False
 
 def show_login_form():
     """顯示登入表單"""
@@ -96,6 +84,18 @@ def show_login_form():
         - 其他功能需要登入後才能使用
         """)
 
+def is_scan_page():
+    """檢查是否為掃描登錄頁面"""
+    try:
+        qr_id_from_url = st.query_params.get("qr_id", "")
+        page_from_url = st.query_params.get("page", "")
+        return qr_id_from_url and page_from_url == "scan"
+    except:
+        return False
+
+# 資料檔案路徑
+DATA_FILE = "plastic_trace_data.csv"
+
 # 初始化資料檔案
 def init_data_file():
     if not os.path.exists(DATA_FILE):
@@ -115,9 +115,11 @@ def load_data():
 def save_data(df):
     df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
-# 產生QR碼
+# 產生QR碼 - 包含網址連結
 def generate_qr_code(qr_id, base_url=None):
-    """產生可掃描的QR碼，包含直接跳轉到登錄頁面的網址"""
+    """
+    產生可掃描的QR碼，包含直接跳轉到登錄頁面的網址
+    """
     # 自動偵測部署環境並使用對應的網址
     if base_url is None:
         def is_streamlit_cloud():
@@ -161,108 +163,20 @@ def get_download_link(file_buffer, filename, text):
     href = f'<a href="data:image/png;base64,{b64}" download="{filename}">{text}</a>'
     return href
 
-def show_scan_interface():
-    """顯示掃描登錄介面（公開功能）"""
-    # 如果不是掃描頁面，顯示標題
-    if not is_scan_page():
-        st.title("♻️ ELV 廢塑膠產銷履歷示範平台")
-        st.markdown("---")
+# 主程式邏輯 - 權限控制
+def main():
+    # 檢查是否為掃描頁面（不需要登入）
+    if is_scan_page():
+        show_scan_interface()
+        return
     
-    st.header("📱 掃描登錄資料")
+    # 檢查登入狀態
+    if not check_login():
+        show_login_form()
+        return
     
-    # 檢查是否透過QR碼掃描進入
-    qr_id_from_url = ""
-    try:
-        qr_id_from_url = st.query_params.get("qr_id", "")
-        if qr_id_from_url:
-            st.success(f"🔍 已掃描QR碼: {qr_id_from_url}")
-            st.info("請在下方填寫此批次的詳細資料")
-    except:
-        pass
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.subheader("輸入QR碼資訊")
-        
-        # 檢查是否從QR碼掃描進入
-        try:
-            default_qr_id = st.query_params.get("qr_id", "").upper()
-        except:
-            default_qr_id = ""
-        
-        qr_id_input = st.text_input(
-            "QR碼 ID", 
-            value=default_qr_id,
-            placeholder="輸入或掃描獲得的QR碼ID"
-        ).upper()
-        
-        if default_qr_id:
-            st.success(f"🔍 已從QR碼掃描自動填入: {default_qr_id}")
-        
-        # 驗證QR碼是否存在
-        df = load_data()
-        valid_qr = qr_id_input in df['qr_id'].values if qr_id_input else False
-        
-        if qr_id_input and valid_qr:
-            st.success(f"✅ QR碼 {qr_id_input} 驗證成功")
-            
-            # 顯示歷史記錄
-            history = df[df['qr_id'] == qr_id_input].sort_values('timestamp', ascending=False)
-            st.subheader("歷史記錄")
-            if not history.empty:
-                st.dataframe(history[['stage', 'timestamp', 'operator', 'weight_kg']], use_container_width=True)
-        elif qr_id_input and not valid_qr:
-            st.error("❌ QR碼不存在，請檢查輸入")
-    
-    with col2:
-        if qr_id_input and valid_qr:
-            st.subheader("登錄新資料")
-            
-            with st.form("data_entry_form"):
-                stage = st.selectbox(
-                    "處理階段",
-                    ["出廠", "運輸", "後端機構接收", "再生處理", "產品製造", "銷售"]
-                )
-                
-                operator = st.text_input("操作人員", placeholder="輸入操作人員姓名")
-                
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    weight_kg = st.number_input("重量 (公斤)", min_value=0.0, step=0.1)
-                with col_b:
-                    location = st.text_input("地點", placeholder="處理地點")
-                
-                source = st.text_input("來源", placeholder="例：某某回收廠")
-                destination = st.text_input("去向", placeholder="例：某某再生廠")
-                product_model = st.text_input("產品型號", placeholder="例：再生塑膠粒 PP-001")
-                notes = st.text_area("備註", placeholder="其他相關資訊")
-                
-                submit_button = st.form_submit_button("🔄 提交資料", type="primary")
-                
-                if submit_button:
-                    if operator:
-                        new_record = {
-                            'qr_id': qr_id_input,
-                            'batch_name': df[df['qr_id'] == qr_id_input]['batch_name'].iloc[0],
-                            'stage': stage,
-                            'operator': operator,
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'weight_kg': weight_kg if weight_kg > 0 else '',
-                            'source': source,
-                            'destination': destination,
-                            'product_model': product_model,
-                            'notes': notes,
-                            'location': location
-                        }
-                        
-                        df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
-                        save_data(df)
-                        
-                        st.success("✅ 資料已成功登錄！")
-                        st.rerun()
-                    else:
-                        st.error("請輸入操作人員姓名")
+    # 已登入，顯示完整功能介面
+    show_main_interface()
 
 def show_main_interface():
     """顯示主要功能介面（需要登入）"""
@@ -354,8 +268,84 @@ def show_main_interface():
     elif menu == "系統管理":
         show_admin_interface()
 
-def show_qr_management():
-    """QR碼產生與管理功能"""
+def show_scan_interface():
+    """顯示掃描登錄介面（公開功能）"""
+    st.header("📱 掃描登錄資料")
+    
+    # 檢查是否透過QR碼掃描進入
+    qr_id_from_url = ""
+    try:
+        qr_id_from_url = st.query_params.get("qr_id", "")
+        if qr_id_from_url:
+            st.success(f"🔍 已掃描QR碼: {qr_id_from_url}")
+            st.info("請在下方填寫此批次的詳細資料")
+    except:
+        pass
+        import os
+        return (
+            os.getenv('STREAMLIT_SHARING_MODE') is not None or
+            os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
+            'streamlit.app' in os.getenv('SERVER_NAME', '') or
+            not os.getenv('COMPUTERNAME')  # Windows 本地環境會有這個變數
+        )
+    
+    if is_streamlit_cloud():
+        st.success("� 線上版本 (Streamlit Cloud)")
+        st.caption("QR碼可全球掃描使用")
+    else:
+        st.warning("🏠 本地版本")
+        st.caption("QR碼僅限區網使用")
+        
+with col3:
+    if st.button("🔍 狀態"):
+        try:
+            import os
+            if 'STREAMLIT_SERVER_PORT' in os.environ:
+                st.info("""
+                **🌐 線上部署狀態：**
+                - ✅ 全球存取
+                - ✅ 手機可掃描QR碼
+                - ✅ 即時資料同步
+                - 🔗 網址：plastictracetest.streamlit.app
+                """)
+            else:
+                st.info("""
+                **🏠 本地開發狀態：**
+                - ✅ 區網內可用
+                - ⚠️ 需部署才能手機展示
+                - 💡 建議部署到 Streamlit Cloud
+                """)
+        except:
+            st.info("開發環境狀態檢查")
+
+st.markdown("---")
+
+# 側邊欄選單
+st.sidebar.title("功能選單")
+
+# 檢查是否透過QR碼掃描進入
+try:
+    qr_id_from_url = st.query_params.get("qr_id", "")
+    page_from_url = st.query_params.get("page", "")
+    
+    if qr_id_from_url and page_from_url == "scan":
+        # 如果是透過QR碼掃描進入，直接跳轉到掃描登錄頁面
+        menu = "掃描登錄資料"
+        st.sidebar.success(f"🔍 掃描QR碼: {qr_id_from_url}")
+        st.sidebar.info("已自動跳轉到資料登錄頁面")
+    else:
+        menu = st.sidebar.selectbox(
+            "選擇功能",
+            ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載", "系統管理"]
+        )
+except:
+    menu = st.sidebar.selectbox(
+        "選擇功能",
+        ["QR碼產生與管理", "掃描登錄資料", "履歷查詢", "資料下載", "系統管理"]
+    )
+
+# QR碼產生與管理
+if menu == "QR碼產生與管理":
     st.header("🏷️ QR碼產生與管理")
     
     col1, col2 = st.columns([1, 1])
@@ -384,7 +374,7 @@ def show_qr_management():
                     st.caption("📱 用手機掃描此QR碼可直接跳轉到資料登錄頁面")
                 else:
                     st.info("🏠 **本地版本QR碼** - 僅限此電腦網路環境使用")
-                    st.caption("📡 部署到 Streamlit Cloud 後將自動產生公開版本")
+                    st.caption("� 部署到 Streamlit Cloud 後將自動產生公開版本")
                 
                 # 提供下載連結
                 st.markdown(
@@ -398,7 +388,7 @@ def show_qr_management():
                     'qr_id': qr_id,
                     'batch_name': batch_name,
                     'stage': '初始建立',
-                    'operator': f'{st.session_state.get("username", "系統")} (QR碼產生)',
+                    'operator': 'QR碼產生系統',
                     'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'weight_kg': '',
                     'source': '',
@@ -424,8 +414,96 @@ def show_qr_management():
         else:
             st.info("尚未建立任何QR碼")
 
-def show_query_interface():
-    """履歷查詢功能"""
+# 掃描登錄資料
+elif menu == "掃描登錄資料":
+    st.header("📱 掃描登錄資料")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.subheader("輸入QR碼資訊")
+        
+        # 檢查是否從QR碼掃描進入
+        try:
+            default_qr_id = st.query_params.get("qr_id", "").upper()
+        except:
+            default_qr_id = ""
+        
+        qr_id_input = st.text_input(
+            "QR碼 ID", 
+            value=default_qr_id,
+            placeholder="輸入或掃描獲得的QR碼ID"
+        ).upper()
+        
+        if default_qr_id:
+            st.success(f"🔍 已從QR碼掃描自動填入: {default_qr_id}")
+        
+        # 驗證QR碼是否存在
+        df = load_data()
+        valid_qr = qr_id_input in df['qr_id'].values if qr_id_input else False
+        
+        if qr_id_input and valid_qr:
+            st.success(f"✅ QR碼 {qr_id_input} 驗證成功")
+            
+            # 顯示歷史記錄
+            history = df[df['qr_id'] == qr_id_input].sort_values('timestamp', ascending=False)
+            st.subheader("歷史記錄")
+            if not history.empty:
+                st.dataframe(history[['stage', 'timestamp', 'operator', 'weight_kg']], use_container_width=True)
+        elif qr_id_input and not valid_qr:
+            st.error("❌ QR碼不存在，請檢查輸入")
+    
+    with col2:
+        if qr_id_input and valid_qr:
+            st.subheader("登錄新資料")
+            
+            with st.form("data_entry_form"):
+                stage = st.selectbox(
+                    "處理階段",
+                    ["出廠", "運輸", "後端機構接收", "再生處理", "產品製造", "銷售"]
+                )
+                
+                operator = st.text_input("操作人員", placeholder="輸入操作人員姓名")
+                
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    weight_kg = st.number_input("重量 (公斤)", min_value=0.0, step=0.1)
+                with col_b:
+                    location = st.text_input("地點", placeholder="處理地點")
+                
+                source = st.text_input("來源", placeholder="例：某某回收廠")
+                destination = st.text_input("去向", placeholder="例：某某再生廠")
+                product_model = st.text_input("產品型號", placeholder="例：再生塑膠粒 PP-001")
+                notes = st.text_area("備註", placeholder="其他相關資訊")
+                
+                submit_button = st.form_submit_button("🔄 提交資料", type="primary")
+                
+                if submit_button:
+                    if operator:
+                        new_record = {
+                            'qr_id': qr_id_input,
+                            'batch_name': df[df['qr_id'] == qr_id_input]['batch_name'].iloc[0],
+                            'stage': stage,
+                            'operator': operator,
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'weight_kg': weight_kg if weight_kg > 0 else '',
+                            'source': source,
+                            'destination': destination,
+                            'product_model': product_model,
+                            'notes': notes,
+                            'location': location
+                        }
+                        
+                        df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
+                        save_data(df)
+                        
+                        st.success("✅ 資料已成功登錄！")
+                        st.rerun()
+                    else:
+                        st.error("請輸入操作人員姓名")
+
+# 履歷查詢
+elif menu == "履歷查詢":
     st.header("🔍 履歷查詢")
     
     df = load_data()
@@ -502,8 +580,8 @@ def show_query_interface():
             else:
                 st.info("沒有符合條件的資料")
 
-def show_download_interface():
-    """資料下載功能"""
+# 資料下載
+elif menu == "資料下載":
     st.header("📥 資料下載")
     
     df = load_data()
@@ -521,140 +599,104 @@ def show_download_interface():
             
             # 各階段統計
             stage_counts = df['stage'].value_counts()
-            st.subheader("各階段統計")
+            st.subheader("各階段記錄數")
             for stage, count in stage_counts.items():
-                st.write(f"**{stage}：** {count} 筆")
+                st.write(f"• {stage}: {count} 筆")
         
         with col2:
             st.subheader("下載選項")
             
-            # 選擇下載格式
-            download_format = st.selectbox("選擇下載格式", ["CSV", "Excel"])
+            # CSV下載
+            csv_data = df.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="📄 下載 CSV 檔案",
+                data=csv_data,
+                file_name=f"plastic_trace_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
             
-            # 選擇下載範圍
-            download_scope = st.selectbox("選擇下載範圍", ["全部資料", "指定QR碼"])
+            # Excel下載
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='履歷資料', index=False)
+                
+                # 統計資料
+                summary_df = pd.DataFrame({
+                    '項目': ['總記錄數', '唯一QR碼數量', '處理階段數'],
+                    '數量': [len(df), df['qr_id'].nunique(), df['stage'].nunique()]
+                })
+                summary_df.to_excel(writer, sheet_name='統計資料', index=False)
             
-            if download_scope == "指定QR碼":
-                available_qrs = df['qr_id'].unique()
-                selected_qrs = st.multiselect("選擇QR碼", available_qrs)
-                if selected_qrs:
-                    df = df[df['qr_id'].isin(selected_qrs)]
+            st.download_button(
+                label="📊 下載 Excel 檔案",
+                data=excel_buffer.getvalue(),
+                file_name=f"plastic_trace_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
             
-            # 下載按鈕
-            if st.button("📥 準備下載", type="primary"):
-                if download_format == "CSV":
-                    csv_data = df.to_csv(index=False, encoding='utf-8-sig')
-                    st.download_button(
-                        label="下載 CSV 檔案",
-                        data=csv_data,
-                        file_name=f"plastic_trace_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                else:  # Excel
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df.to_excel(writer, index=False, sheet_name='履歷資料')
-                    
-                    st.download_button(
-                        label="下載 Excel 檔案",
-                        data=output.getvalue(),
-                        file_name=f"plastic_trace_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+            st.info("💡 建議定期備份資料，保存期限至少五年")
 
-def show_admin_interface():
-    """系統管理功能（僅管理員可用）"""
-    if get_user_role() != 'admin':
-        st.error("❌ 此功能僅限管理員使用")
-        return
-    
+# 系統管理
+elif menu == "系統管理":
     st.header("⚙️ 系統管理")
     
-    tab1, tab2, tab3 = st.tabs(["使用者管理", "資料管理", "系統資訊"])
+    col1, col2 = st.columns([1, 1])
     
-    with tab1:
-        st.subheader("使用者帳號")
-        st.info("目前使用預設帳號系統，可在此查看帳號資訊")
-        
-        users_df = pd.DataFrame([
-            {"帳號": "admin", "角色": "管理員", "權限": "完整存取"},
-            {"帳號": "operator", "角色": "操作員", "權限": "QR碼管理、資料登錄、查詢、下載"},
-            {"帳號": "viewer", "角色": "查看者", "權限": "僅查詢與下載"}
-        ])
-        st.dataframe(users_df, use_container_width=True)
-    
-    with tab2:
-        st.subheader("資料庫管理")
+    with col1:
+        st.subheader("資料管理")
         
         df = load_data()
-        st.metric("總資料筆數", len(df))
+        st.write(f"當前資料記錄數：{len(df)}")
+        st.write(f"資料檔案大小：{os.path.getsize(DATA_FILE) / 1024:.2f} KB" if os.path.exists(DATA_FILE) else "資料檔案不存在")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🗑️ 清空所有資料", type="secondary"):
-                if st.checkbox("確認清空（此操作無法復原）"):
-                    # 清空資料檔案
-                    empty_df = pd.DataFrame(columns=[
-                        'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-                        'weight_kg', 'source', 'destination', 'product_model', 
-                        'notes', 'location'
-                    ])
-                    save_data(empty_df)
-                    st.success("✅ 資料已清空")
-                    st.rerun()
-        
-        with col2:
-            if st.button("📊 匯出備份"):
-                backup_data = df.to_csv(index=False, encoding='utf-8-sig')
-                st.download_button(
-                    label="下載備份檔案",
-                    data=backup_data,
-                    file_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+        # 清除所有資料
+        if st.button("🗑️ 清除所有資料", type="secondary"):
+            if st.checkbox("我確認要清除所有資料（此操作不可復原）"):
+                empty_df = pd.DataFrame(columns=[
+                    'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
+                    'weight_kg', 'source', 'destination', 'product_model', 
+                    'notes', 'location'
+                ])
+                save_data(empty_df)
+                st.success("✅ 所有資料已清除")
+                st.rerun()
     
-    with tab3:
+    with col2:
         st.subheader("系統資訊")
+        st.write("**平台名稱：** ELV 廢塑膠產銷履歷示範平台")
+        st.write("**版本：** 1.0.0")
+        st.write("**技術架構：** Streamlit + Python")
+        st.write("**資料儲存：** 本地 CSV")
+        st.write("**建立日期：** 2025-08-04")
         
-        # 檢查部署環境
-        def is_streamlit_cloud():
-            """檢查是否在 Streamlit Cloud 環境"""
-            import os
-            return (
-                os.getenv('STREAMLIT_SHARING_MODE') is not None or
-                os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
-                'streamlit.app' in os.getenv('SERVER_NAME', '') or
-                not os.getenv('COMPUTERNAME')  # Windows 本地環境會有這個變數
-            )
-        
-        env_status = "Streamlit Cloud" if is_streamlit_cloud() else "本地環境"
-        st.info(f"部署環境：{env_status}")
-        
-        # 系統狀態
-        st.write("**版本資訊：**")
-        st.write("- 平台版本：v1.0.0")
-        st.write("- 最後更新：2024-08-04")
-        st.write("- 版權：財團法人台灣產業服務基金會")
+        st.subheader("使用說明")
+        st.write("""
+        1. **QR碼產生：** 為每批廢塑膠產生唯一QR碼
+        2. **資料登錄：** 各階段人員掃描QR碼並填寫相關資料
+        3. **履歷查詢：** 可追蹤完整的產銷履歷
+        4. **資料下載：** 支援CSV/Excel格式匯出
+        5. **行動支援：** 支援手機、平板、電腦操作
+        """)
 
-# 主程式邏輯 - 權限控制
-def main():
-    # 檢查是否為掃描頁面（不需要登入）
-    if is_scan_page():
-        show_scan_interface()
-        return
-    
-    # 檢查登入狀態
-    if not check_login():
-        show_login_form()
-        return
-    
-    # 已登入，顯示完整功能介面
-    show_main_interface()
-
-# 版權聲明
+# 頁尾版權聲明
 st.markdown("---")
-st.markdown("**© 2024 財團法人台灣產業服務基金會 Taiwan Industry Service Foundation**")
-
-# 主程式執行
-if __name__ == "__main__":
-    main()
+st.markdown(
+    """
+    <div style='text-align: center; padding: 20px; background-color: #f0f8f5; border-radius: 10px; margin-top: 30px;'>
+        <div style='color: #2e7d32; margin-bottom: 10px;'>
+            <h4 style='margin: 0; color: #1b5e20;'>🌱 ELV 廢塑膠產銷履歷示範平台</h4>
+            <p style='margin: 5px 0; color: #388e3c;'>促進循環經濟，提升可追溯性</p>
+            <p style='margin: 5px 0; color: #388e3c;'>💚 為未來歐盟ELV廢塑膠再利用政策接軌做準備</p>
+        </div>
+        <hr style='border: 1px solid #c8e6c9; margin: 15px 0;'>
+        <div style='color: #555; font-size: 14px;'>
+            <p style='margin: 5px 0; font-weight: bold;'>© 2025 財團法人台灣產業服務基金會</p>
+            <p style='margin: 5px 0;'>Taiwan Industry Service Foundation</p>
+            <p style='margin: 5px 0; font-size: 12px; color: #777;'>
+                版權所有，未經授權不得轉載或商業使用
+            </p>
+        </div>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
