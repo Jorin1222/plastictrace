@@ -10,6 +10,8 @@ from PIL import Image
 import hashlib
 import zipfile
 from io import BytesIO
+# 匯入新的資料管理器
+from data_manager import get_data_manager, load_data, save_data
 
 # 頁面配置
 st.set_page_config(
@@ -107,15 +109,6 @@ def init_data_file():
             'notes', 'location'
         ])
         df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
-
-# 載入資料
-def load_data():
-    init_data_file()
-    return pd.read_csv(DATA_FILE, encoding='utf-8-sig')
-
-# 儲存資料
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
 # 產生QR碼
 def generate_qr_code(qr_id, base_url=None):
@@ -306,21 +299,32 @@ def show_main_interface():
     with col3:
         if st.button("🔍 狀態"):
             try:
+                # 獲取資料管理器資訊
+                dm = get_data_manager()
+                storage_info = dm.get_storage_info()
+                
                 if 'STREAMLIT_SERVER_PORT' in os.environ:
-                    st.info("""
+                    storage_status = "✅ Google Sheets 持久化" if storage_info["sheets_available"] else "⚠️ 暫時性存儲"
+                    st.info(f"""
                     **🌐 線上部署狀態：**
                     - ✅ 全球存取
                     - ✅ 手機可掃描QR碼
-                    - ✅ 即時資料同步
+                    - {storage_status}
                     - 🔗 網址：plastictracetest.streamlit.app
                     """)
                 else:
-                    st.info("""
+                    storage_status = "✅ Google Sheets + 本地備份" if storage_info["sheets_available"] else "📁 本地 CSV 存儲"
+                    st.info(f"""
                     **🏠 本地開發狀態：**
                     - ✅ 區網內可用
-                    - ⚠️ 需部署才能手機展示
+                    - {storage_status}
                     - 💡 建議部署到 Streamlit Cloud
                     """)
+                
+                # 顯示 Google Sheets 連結（如果可用）
+                if storage_info.get("sheet_url"):
+                    st.markdown(f"📊 [查看 Google Sheets]({storage_info['sheet_url']})")
+                    
             except:
                 st.info("開發環境狀態檢查")
 
@@ -641,7 +645,7 @@ def show_admin_interface():
     
     st.header("⚙️ 系統管理")
     
-    tab1, tab2, tab3 = st.tabs(["使用者管理", "資料管理", "系統資訊"])
+    tab1, tab2, tab3, tab4 = st.tabs(["使用者管理", "資料管理", "Google Sheets", "系統資訊"])
     
     with tab1:
         st.subheader("使用者帳號")
@@ -685,6 +689,95 @@ def show_admin_interface():
                 )
     
     with tab3:
+        st.subheader("Google Sheets 管理")
+        
+        # 獲取資料管理器
+        dm = get_data_manager()
+        storage_info = dm.get_storage_info()
+        
+        # 顯示 Google Sheets 狀態
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Google Sheets 狀態：**")
+            if storage_info["sheets_available"]:
+                st.success("✅ Google Sheets 已連接")
+                if storage_info.get("sheet_url"):
+                    st.markdown(f"📊 [開啟試算表]({storage_info['sheet_url']})")
+            else:
+                st.error("❌ Google Sheets 未連接")
+                st.info("請檢查認證設定或網路連線")
+            
+            st.write("**本地備份狀態：**")
+            if storage_info["backup_available"]:
+                st.success("✅ 本地備份檔案存在")
+            else:
+                st.warning("⚠️ 無本地備份檔案")
+        
+        with col2:
+            st.write("**管理操作：**")
+            
+            # 測試連接
+            if st.button("🔍 測試 Google Sheets 連接"):
+                if storage_info["sheets_available"]:
+                    try:
+                        sheets_manager = dm.sheets_manager
+                        if sheets_manager and sheets_manager.test_connection():
+                            st.success("✅ Google Sheets 連接正常")
+                        else:
+                            st.error("❌ Google Sheets 連接測試失敗")
+                    except Exception as e:
+                        st.error(f"❌ 連接測試失敗: {str(e)}")
+                else:
+                    st.error("❌ Google Sheets 不可用")
+            
+            # 手動同步
+            if st.button("🔄 同步本地資料到 Google Sheets"):
+                if storage_info["backup_available"]:
+                    dm.sync_to_sheets()
+                else:
+                    st.warning("⚠️ 沒有本地資料可同步")
+            
+            # 重新初始化
+            if st.button("🔁 重新初始化 Google Sheets"):
+                try:
+                    # 重新獲取資料管理器
+                    global data_manager
+                    data_manager = None  # 清除快取
+                    dm_new = get_data_manager()
+                    st.success("✅ Google Sheets 已重新初始化")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ 重新初始化失敗: {str(e)}")
+        
+        # 設定說明
+        st.markdown("---")
+        st.subheader("Google Sheets 設定說明")
+        
+        with st.expander("📋 設定步驟"):
+            st.markdown("""
+            **1. 建立 Google Cloud 專案：**
+            - 前往 [Google Cloud Console](https://console.cloud.google.com/)
+            - 建立新專案或選擇現有專案
+            
+            **2. 啟用 API：**
+            - 啟用 Google Sheets API
+            - 啟用 Google Drive API
+            
+            **3. 建立服務帳號：**
+            - 前往「IAM 和管理」→「服務帳號」
+            - 建立新的服務帳號
+            - 下載 JSON 金鑰檔案
+            
+            **4. 設定認證：**
+            - **本地開發**：將 JSON 檔案重新命名為 `service_account.json` 並放在專案根目錄
+            - **Streamlit Cloud**：在 Secrets 中設定 `gcp_service_account` 部分
+            
+            **5. 分享試算表：**
+            - 將服務帳號的電子郵件地址加入試算表的編輯者
+            """)
+    
+    with tab4:
         st.subheader("系統資訊")
         
         # 檢查部署環境
