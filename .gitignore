@@ -8,6 +8,10 @@ build/
 develop-eggs/
 dist/
 downloads/
+
+# Google Sheets 認證檔案
+service_account.json
+.secrets.toml
 eggs/
 .eggs/
 lib/
