@@ -34,8 +34,22 @@ ENV/
 # Streamlit
 .streamlit/secrets.toml
 
-# Data files (可選擇是否加入版控)
-# plastic_trace_data.csv
+# 🔒 資料安全 - 重要！所有資料檔案都不應上傳
+*.csv
+*.xlsx
+*.xls
+*.json
+data/
+records/
+backup/
+uploads/
+qr_codes/
+temp/
+
+# 特定資料檔案
+plastic_trace_data.csv
+demo_data.csv
+user_data.csv
 
 # OS
 .DS_Store
