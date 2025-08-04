@@ -38,10 +38,24 @@ def save_data(df):
     df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
 # 產生QR碼 - 包含網址連結
-def generate_qr_code(qr_id, base_url="http://localhost:8501"):
+def generate_qr_code(qr_id, base_url=None):
     """
     產生可掃描的QR碼，包含直接跳轉到登錄頁面的網址
     """
+    # 自動偵測部署環境並使用對應的網址
+    if base_url is None:
+        try:
+            # 嘗試從 Streamlit 環境變數獲取
+            import os
+            if 'STREAMLIT_SERVER_PORT' in os.environ:
+                # 在 Streamlit Cloud 環境
+                base_url = "https://plastictracetest.streamlit.app"
+            else:
+                # 本地開發環境
+                base_url = "http://localhost:8501"
+        except:
+            base_url = "http://localhost:8501"
+    
     # 構建完整的網址，包含QR碼ID參數
     full_url = f"{base_url}/?qr_id={qr_id}&page=scan"
     
@@ -71,22 +85,49 @@ def get_download_link(file_buffer, filename, text):
 # 主標題
 st.title("♻️ ELV 廢塑膠產銷履歷示範平台")
 
-# 🔒 資料安全提醒
-col1, col2 = st.columns([3, 1])
+# 🔒 資料安全提醒 + 部署狀態
+col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
     if os.path.exists(DATA_FILE):
         st.success("🔐 使用本地資料（安全模式）")
     else:
         st.info("🧪 首次使用，將建立示範資料")
-        
+
 with col2:
-    if st.button("🔍 安全狀態"):
-        st.info("""
-        **資料安全說明：**
-        - ✅ 真實資料只存在您的電腦
-        - ✅ GitHub 只有程式碼
-        - ✅ Streamlit Cloud 只有示範功能
-        """)
+    # 檢查部署環境
+    try:
+        import os
+        if 'STREAMLIT_SERVER_PORT' in os.environ:
+            st.success("🌐 線上版本 (Streamlit Cloud)")
+            st.caption("QR碼可全球掃描使用")
+        else:
+            st.warning("🏠 本地版本")
+            st.caption("QR碼僅限區網使用")
+    except:
+        st.warning("🏠 本地版本")
+        st.caption("QR碼僅限區網使用")
+        
+with col3:
+    if st.button("🔍 狀態"):
+        try:
+            import os
+            if 'STREAMLIT_SERVER_PORT' in os.environ:
+                st.info("""
+                **🌐 線上部署狀態：**
+                - ✅ 全球存取
+                - ✅ 手機可掃描QR碼
+                - ✅ 即時資料同步
+                - 🔗 網址：plastictracetest.streamlit.app
+                """)
+            else:
+                st.info("""
+                **🏠 本地開發狀態：**
+                - ✅ 區網內可用
+                - ⚠️ 需部署才能手機展示
+                - 💡 建議部署到 Streamlit Cloud
+                """)
+        except:
+            st.info("開發環境狀態檢查")
 
 st.markdown("---")
 
@@ -129,22 +170,22 @@ if menu == "QR碼產生與管理":
                 # 產生唯一ID
                 qr_id = str(uuid.uuid4())[:8].upper()
                 
-                # 取得當前網址基底（如果在 Streamlit Cloud 上會自動偵測）
-                try:
-                    # 嘗試從 Streamlit 取得當前網址
-                    base_url = st.query_params.get('base_url', 'http://localhost:8501')
-                except:
-                    base_url = 'http://localhost:8501'
-                
-                # 產生包含網址的QR碼
-                qr_buffer, qr_url = generate_qr_code(qr_id, base_url)
+                # 產生包含自動偵測網址的QR碼
+                qr_buffer, qr_url = generate_qr_code(qr_id)
                 
                 # 顯示QR碼
                 st.image(qr_buffer, caption=f"QR碼 ID: {qr_id}", width=200)
                 
                 # 顯示QR碼包含的網址
                 st.code(qr_url, language="text")
-                st.caption("📱 掃描此QR碼可直接跳轉到資料登錄頁面")
+                
+                # 根據環境顯示不同的說明
+                if "streamlit.app" in qr_url:
+                    st.success("🌐 **線上版本QR碼** - 任何地方都可掃描使用！")
+                    st.caption("📱 用手機掃描此QR碼可直接跳轉到資料登錄頁面")
+                else:
+                    st.info("🏠 **本地版本QR碼** - 僅限此電腦網路環境使用")
+                    st.caption("� 部署到 Streamlit Cloud 後將自動產生公開版本")
                 
                 # 提供下載連結
                 st.markdown(
