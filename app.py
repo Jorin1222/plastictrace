@@ -44,16 +44,19 @@ def generate_qr_code(qr_id, base_url=None):
     """
     # 自動偵測部署環境並使用對應的網址
     if base_url is None:
-        try:
-            # 嘗試從 Streamlit 環境變數獲取
+        def is_streamlit_cloud():
+            """檢查是否在 Streamlit Cloud 環境"""
             import os
-            if 'STREAMLIT_SERVER_PORT' in os.environ:
-                # 在 Streamlit Cloud 環境
-                base_url = "https://plastictracetest.streamlit.app"
-            else:
-                # 本地開發環境
-                base_url = "http://localhost:8501"
-        except:
+            return (
+                os.getenv('STREAMLIT_SHARING_MODE') is not None or
+                os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
+                'streamlit.app' in os.getenv('SERVER_NAME', '') or
+                not os.getenv('COMPUTERNAME')  # Windows 本地環境會有這個變數
+            )
+        
+        if is_streamlit_cloud():
+            base_url = "https://plastictracetest.streamlit.app"
+        else:
             base_url = "http://localhost:8501"
     
     # 構建完整的網址，包含QR碼ID參數
@@ -95,15 +98,20 @@ with col1:
 
 with col2:
     # 檢查部署環境
-    try:
+    def is_streamlit_cloud():
+        """檢查是否在 Streamlit Cloud 環境"""
         import os
-        if 'STREAMLIT_SERVER_PORT' in os.environ:
-            st.success("🌐 線上版本 (Streamlit Cloud)")
-            st.caption("QR碼可全球掃描使用")
-        else:
-            st.warning("🏠 本地版本")
-            st.caption("QR碼僅限區網使用")
-    except:
+        return (
+            os.getenv('STREAMLIT_SHARING_MODE') is not None or
+            os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
+            'streamlit.app' in os.getenv('SERVER_NAME', '') or
+            not os.getenv('COMPUTERNAME')  # Windows 本地環境會有這個變數
+        )
+    
+    if is_streamlit_cloud():
+        st.success("� 線上版本 (Streamlit Cloud)")
+        st.caption("QR碼可全球掃描使用")
+    else:
         st.warning("🏠 本地版本")
         st.caption("QR碼僅限區網使用")
         
