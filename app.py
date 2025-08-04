@@ -8,6 +8,8 @@ import os
 import uuid
 from PIL import Image
 import hashlib
+import zipfile
+from io import BytesIO
 
 # 頁面配置
 st.set_page_config(
@@ -122,7 +124,6 @@ def generate_qr_code(qr_id, base_url=None):
     if base_url is None:
         def is_streamlit_cloud():
             """檢查是否在 Streamlit Cloud 環境"""
-            import os
             return (
                 os.getenv('STREAMLIT_SHARING_MODE') is not None or
                 os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
@@ -288,7 +289,6 @@ def show_main_interface():
         # 檢查部署環境
         def is_streamlit_cloud():
             """檢查是否在 Streamlit Cloud 環境"""
-            import os
             return (
                 os.getenv('STREAMLIT_SHARING_MODE') is not None or
                 os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
@@ -306,7 +306,6 @@ def show_main_interface():
     with col3:
         if st.button("🔍 狀態"):
             try:
-                import os
                 if 'STREAMLIT_SERVER_PORT' in os.environ:
                     st.info("""
                     **🌐 線上部署狀態：**
@@ -421,6 +420,78 @@ def show_qr_management():
         
         if not qr_codes.empty:
             st.dataframe(qr_codes, use_container_width=True)
+            
+            # 添加QR碼下載功能
+            st.subheader("下載已建立的QR碼")
+            
+            # 選擇要下載的QR碼
+            selected_qr = st.selectbox(
+                "選擇要下載的QR碼", 
+                options=qr_codes['qr_id'].tolist(),
+                format_func=lambda x: f"{x} - {qr_codes[qr_codes['qr_id']==x]['batch_name'].iloc[0]}"
+            )
+            
+            col_a, col_b = st.columns(2)
+            
+            with col_a:
+                if st.button("📥 下載單個QR碼", type="secondary"):
+                    if selected_qr:
+                        # 產生選中的QR碼
+                        qr_buffer, qr_url = generate_qr_code(selected_qr)
+                        batch_name = qr_codes[qr_codes['qr_id']==selected_qr]['batch_name'].iloc[0]
+                        
+                        # 顯示QR碼
+                        st.image(qr_buffer, caption=f"QR碼: {selected_qr}", width=150)
+                        
+                        # 提供下載連結
+                        st.markdown(
+                            get_download_link(qr_buffer, f"QR_{selected_qr}_{batch_name}.png", "📥 點擊下載"),
+                            unsafe_allow_html=True
+                        )
+                        
+                        st.info(f"🔗 QR碼網址：{qr_url}")
+            
+            with col_b:
+                if st.button("📦 批量下載所有QR碼", type="secondary"):
+                    # 建立一個臨時的zip檔案來包含所有QR碼
+                    import zipfile
+                    from io import BytesIO
+                    
+                    zip_buffer = BytesIO()
+                    
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for _, row in qr_codes.iterrows():
+                            qr_id = row['qr_id']
+                            batch_name = row['batch_name']
+                            
+                            # 產生QR碼
+                            qr_buffer, qr_url = generate_qr_code(qr_id)
+                            
+                            # 將QR碼圖片加入zip檔案
+                            filename = f"QR_{qr_id}_{batch_name}.png"
+                            zip_file.writestr(filename, qr_buffer.getvalue())
+                            
+                            # 建立包含QR碼資訊的文字檔
+                            info_content = f"""QR碼資訊
+ID: {qr_id}
+批次名稱: {batch_name}
+建立時間: {row['timestamp']}
+網址: {qr_url}
+"""
+                            info_filename = f"QR_{qr_id}_{batch_name}_info.txt"
+                            zip_file.writestr(info_filename, info_content.encode('utf-8'))
+                    
+                    zip_buffer.seek(0)
+                    
+                    # 提供zip檔案下載
+                    st.download_button(
+                        label="📦 下載所有QR碼 (ZIP)",
+                        data=zip_buffer.getvalue(),
+                        file_name=f"所有QR碼_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                        mime="application/zip"
+                    )
+                    
+                    st.success(f"✅ 已準備 {len(qr_codes)} 個QR碼的ZIP檔案")
         else:
             st.info("尚未建立任何QR碼")
 
@@ -619,7 +690,6 @@ def show_admin_interface():
         # 檢查部署環境
         def is_streamlit_cloud():
             """檢查是否在 Streamlit Cloud 環境"""
-            import os
             return (
                 os.getenv('STREAMLIT_SHARING_MODE') is not None or
                 os.getenv('HOSTNAME', '').endswith('.streamlit.app') or
