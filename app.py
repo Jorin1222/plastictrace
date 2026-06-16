@@ -12,6 +12,8 @@ import zipfile
 from io import BytesIO
 # 匯入新的資料管理器
 from data_manager import get_data_manager, load_data, save_data
+# 匯入 schema 單一來源
+from schema import COLUMNS, empty_frame
 # 匯入現代化 UI 元件
 from modern_ui import apply_modern_css, create_header, create_status_bar, create_navigation_sidebar, create_quick_actions
 
@@ -142,12 +144,7 @@ def show_login_form():
 # 初始化資料檔案
 def init_data_file():
     if not os.path.exists(DATA_FILE):
-        df = pd.DataFrame(columns=[
-            'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-            'weight_kg', 'source', 'destination', 'product_model', 
-            'notes', 'location'
-        ])
-        df.to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
+        empty_frame().to_csv(DATA_FILE, index=False, encoding='utf-8-sig')
 
 # 產生QR碼
 def generate_qr_code(qr_id, base_url=None):
@@ -288,10 +285,10 @@ def show_scan_interface():
                             'notes': notes,
                             'location': location
                         }
-                        
-                        df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
-                        save_data(df)
-                        
+
+                        # 單列 append(並發安全),不再 load 整表覆寫
+                        get_data_manager().append_record(new_record)
+
                         st.success("✅ 資料已成功登錄！")
                         st.rerun()
                     else:
@@ -543,8 +540,7 @@ def show_qr_management():
                             unsafe_allow_html=True
                         )
                         
-                        # 將基本資訊存入資料庫
-                        df = load_data()
+                        # 將基本資訊存入資料庫(單列 append)
                         new_record = {
                             'qr_id': qr_id,
                             'batch_name': batch_name,
@@ -558,9 +554,8 @@ def show_qr_management():
                             'notes': f'QR碼已建立，批次：{batch_name}',
                             'location': ''
                         }
-                        df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
-                        save_data(df)
-                        
+                        get_data_manager().append_record(new_record)
+
                         st.success(f"✅ QR碼已產生！ID: {qr_id}")
                     else:
                         st.error("請輸入批次名稱")
@@ -856,12 +851,7 @@ def show_admin_interface():
             if st.button("🗑️ 清空所有資料", type="secondary"):
                 if st.checkbox("確認清空（此操作無法復原）"):
                     # 清空資料檔案
-                    empty_df = pd.DataFrame(columns=[
-                        'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-                        'weight_kg', 'source', 'destination', 'product_model', 
-                        'notes', 'location'
-                    ])
-                    save_data(empty_df)
+                    save_data(empty_frame())
                     st.success("✅ 資料已清空")
                     st.rerun()
         

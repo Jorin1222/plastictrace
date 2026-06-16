@@ -10,6 +10,7 @@ import streamlit as st
 import json
 import os
 from datetime import datetime
+from schema import COLUMNS, ensure_schema
 
 class GoogleSheetsManager:
     def __init__(self, spreadsheet_name="ELV廢塑膠產銷履歷資料庫"):
@@ -157,13 +158,8 @@ class GoogleSheetsManager:
                     rows=1000, 
                     cols=20
                 )
-                # 設置標題行
-                headers = [
-                    'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-                    'weight_kg', 'source', 'destination', 'product_model', 
-                    'notes', 'location'
-                ]
-                self.worksheet.append_row(headers)
+                # 設置標題行(單一來源,含 9.2.2 新增欄位)
+                self.worksheet.append_row(COLUMNS)
                 st.info(f"🆕 已創建新的工作表: {self.worksheet_name}")
             
             return True
@@ -183,15 +179,10 @@ class GoogleSheetsManager:
             
             if not data:
                 # 如果沒有資料，返回空的 DataFrame 但有正確的欄位
-                return pd.DataFrame(columns=[
-                    'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-                    'weight_kg', 'source', 'destination', 'product_model', 
-                    'notes', 'location'
-                ])
+                return pd.DataFrame(columns=COLUMNS)
             
-            df = pd.DataFrame(data)
-            return df
-            
+            return ensure_schema(pd.DataFrame(data))
+
         except Exception as e:
             st.error(f"❌ 從 Google Sheets 載入資料失敗：{str(e)}")
             return pd.DataFrame()
@@ -205,21 +196,17 @@ class GoogleSheetsManager:
             
             # 清空現有資料（保留標題行）
             self.worksheet.clear()
-            
-            # 設置標題行
-            headers = [
-                'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-                'weight_kg', 'source', 'destination', 'product_model', 
-                'notes', 'location'
-            ]
-            
+
+            # 設置標題行(單一來源,含新欄位 → 修「save 默默丟新欄」的 A2 critical gap)
+            headers = COLUMNS
+
             # 準備資料（包含標題行）
             data_to_upload = [headers]
-            
+
             if not df.empty:
-                # 確保 DataFrame 有正確的欄位順序
-                df_ordered = df.reindex(columns=headers, fill_value='')
-                
+                # 確保 DataFrame 有正確的欄位(補齊缺欄、依 COLUMNS 排序)
+                df_ordered = ensure_schema(df)
+
                 # 轉換為列表格式
                 for _, row in df_ordered.iterrows():
                     data_to_upload.append([str(val) if pd.notna(val) else '' for val in row])
@@ -241,16 +228,10 @@ class GoogleSheetsManager:
                 st.error("❌ Google Sheets 工作表未初始化")
                 return False
             
-            # 準備記錄資料
-            headers = [
-                'qr_id', 'batch_name', 'stage', 'operator', 'timestamp', 
-                'weight_kg', 'source', 'destination', 'product_model', 
-                'notes', 'location'
-            ]
-            
-            record_values = [str(record_dict.get(header, '')) for header in headers]
-            
-            # 新增記錄
+            # 準備記錄資料(單一來源,含新欄位)
+            record_values = [str(record_dict.get(header, '')) for header in COLUMNS]
+
+            # 新增記錄(單列 append,並發安全)
             self.worksheet.append_row(record_values)
             
             return True
