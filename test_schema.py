@@ -53,6 +53,22 @@ def test_ensure_schema_none_returns_empty_16col():
     assert out.empty and list(out.columns) == COLUMNS
 
 
+def test_ensure_schema_converts_nan_to_empty_string():
+    """CSV 空格讀進來是 NaN;ensure_schema 須轉成 '',否則 sorted()/顯示會壞。"""
+    import numpy as np
+    df = pd.DataFrame([
+        {'qr_id': 'A', 'material_type': 'PP', 'weight_kg': 100},
+        {'qr_id': 'B', 'material_type': np.nan, 'weight_kg': np.nan},
+    ])
+    out = ensure_schema(df)
+    assert out.loc[1, 'material_type'] == ''
+    assert out.loc[1, 'weight_kg'] == ''
+    # 混型欄位可正常 sorted(模擬 app.py 的物料篩選)
+    mats = sorted({str(m).strip() for m in out['material_type']
+                   if str(m).strip() and str(m).strip().lower() != 'nan'})
+    assert mats == ['PP']
+
+
 def test_roundtrip_append_then_load_keeps_new_columns():
     """模擬 append→reload:新欄不可在來回後消失(對應 A2 的回歸測試)。"""
     rec = {c: '' for c in COLUMNS}
@@ -127,6 +143,7 @@ def test_mass_balance_node_values_not_sum():
     assert mb['recovery_rate'] == 85.0
     assert mb['recycled_content'] == 27.0
     assert mb['data_tier'] == '實測(初級)'
+    assert mb['output_stage'] == STAGE_PRODUCT   # 產出取自產品製造階段
 
 
 def test_mass_balance_same_stage_takes_latest_not_sum():

@@ -70,7 +70,9 @@ def ensure_schema(df):
     for col in COLUMNS:
         if col not in df.columns:
             df[col] = ''
-    return df[COLUMNS]
+    # CSV 空格讀進來是 NaN(float),Sheets 則是 '';統一成 '' 讓全 app 看到一致的空值
+    # (否則 material_type 等欄會混 str/float → sorted() TypeError、顯示出現 'nan')
+    return df[COLUMNS].fillna('')
 
 
 def to_float(value):
@@ -135,7 +137,9 @@ def compute_mass_balance(df, batch):
 
     feed = _latest_weight(b, [STAGE_FACTORY_OUT])
     received = _latest_weight(b, [STAGE_BACKEND_IN])
-    output = _latest_weight(b, [STAGE_RECYCLE, STAGE_PRODUCT])
+    out_row = _latest_row(b, [STAGE_RECYCLE, STAGE_PRODUCT])
+    output = None if out_row is None else to_float(out_row.get('weight_kg'))
+    output_stage = None if out_row is None else str(out_row.get('stage') or '') or None
 
     loss = None
     if feed is not None and output is not None:
@@ -167,6 +171,7 @@ def compute_mass_balance(df, batch):
         'feed_kg': feed,                  # 進料
         'received_kg': received,          # 收料(對帳)
         'output_kg': output,              # 產出
+        'output_stage': output_stage,     # 產出取自哪個 stage(再生處理/產品製造)
         'loss_kg': loss,                  # 損耗
         'recovery_rate': recovery_rate,   # 回收率 %
         'recycled_content': recycled_content,  # 成品再生含量 %(對歐盟門檻)

@@ -13,7 +13,75 @@ from io import BytesIO
 # 匯入新的資料管理器
 from data_manager import get_data_manager, load_data, save_data
 # 匯入 schema 單一來源
-from schema import COLUMNS, empty_frame
+from schema import (
+    COLUMNS, empty_frame, compute_mass_balance, threshold_color,
+    SCAN_STAGES, DATA_TIER_OPTIONS, ELV_CLOSEDLOOP_OPTIONS, MATERIAL_TYPE_OPTIONS,
+    STAGE_FACTORY_OUT, STAGE_BACKEND_IN, STAGE_RECYCLE, STAGE_PRODUCT,
+    STAGE_TRANSPORT, STAGE_SALE, EU_THRESHOLD_LOW, EU_THRESHOLD_HIGH,
+)
+
+# ─── stage 驅動表單的欄位配置(P1-3,設計合成解) ──────────────────
+# 每個 stage 只「優先顯示」該節點要填的少數欄位,其餘收進「更多欄位」expander;
+# 16 欄全部仍存資料層。recycled_ratio 在出廠 = 來源純度、在後端段 = 成品再生含量。
+_ALL_EDITABLE = [
+    'weight_kg', 'recycled_ratio', 'source', 'destination', 'product_model',
+    'material_type', 'rrms_doc_id', 'data_tier', 'is_elv_closedloop',
+    'location', 'notes',
+]
+_PRIMARY_FIELDS = {
+    STAGE_FACTORY_OUT: ['weight_kg', 'recycled_ratio', 'destination',
+                        'material_type', 'rrms_doc_id', 'data_tier'],
+    STAGE_BACKEND_IN: ['weight_kg', 'product_model', 'recycled_ratio', 'data_tier'],
+    STAGE_RECYCLE:    ['weight_kg', 'product_model', 'recycled_ratio', 'data_tier'],
+    STAGE_PRODUCT:    ['weight_kg', 'product_model', 'recycled_ratio', 'data_tier'],
+    STAGE_TRANSPORT:  ['weight_kg', 'source', 'destination'],
+    STAGE_SALE:       ['product_model', 'destination', 'recycled_ratio'],
+}
+
+
+def _field_labels(keys, stage):
+    """把欄位 key 轉成中文短標籤(給 caption 提示用)。"""
+    ratio = "再生料來源純度" if stage == STAGE_FACTORY_OUT else "成品再生含量"
+    names = {
+        'weight_kg': '重量', 'recycled_ratio': ratio, 'source': '來源',
+        'destination': '去向', 'product_model': '用途/產品', 'material_type': '物料類別',
+        'rrms_doc_id': 'RRMS單號', 'data_tier': '資料可信度',
+        'is_elv_closedloop': '閉環來源', 'location': '地點', 'notes': '備註',
+    }
+    return [names.get(k, k) for k in keys]
+
+
+def _render_scan_field(key, stage):
+    """渲染單一登錄欄位並回傳值(空值統一回 '')。recycled_ratio 標籤依 stage 變。"""
+    ratio_label = "再生料來源純度 (%)" if stage == STAGE_FACTORY_OUT else "成品再生含量 (%)"
+    wkey = f"scanfld_{key}"
+    if key == 'weight_kg':
+        v = st.number_input("重量 (公斤)", min_value=0.0, step=0.1, key=wkey)
+        return v if v > 0 else ''
+    if key == 'recycled_ratio':
+        v = st.number_input(ratio_label, min_value=0.0, max_value=100.0, step=0.1,
+                            key=wkey, help="0–100;留 0 視為未填")
+        return v if v > 0 else ''
+    if key == 'data_tier':
+        return st.selectbox("資料可信度", DATA_TIER_OPTIONS, key=wkey,
+                            help="實測=現場量測;推估=估算值,試辦報告會據此標示可信度")
+    if key == 'material_type':
+        return st.selectbox("物料類別", MATERIAL_TYPE_OPTIONS, key=wkey)
+    if key == 'is_elv_closedloop':
+        return st.selectbox("報廢車閉環來源", ELV_CLOSEDLOOP_OPTIONS, key=wkey)
+    if key == 'rrms_doc_id':
+        return st.text_input("RRMS／報廢系統申報單號", key=wkey)
+    if key == 'source':
+        return st.text_input("來源", placeholder="例：某某回收廠", key=wkey)
+    if key == 'destination':
+        return st.text_input("去向", placeholder="例：某某再生廠", key=wkey)
+    if key == 'product_model':
+        return st.text_input("用途／產品型號", placeholder="例：再生塑膠粒 PP-001", key=wkey)
+    if key == 'location':
+        return st.text_input("地點", placeholder="處理地點", key=wkey)
+    if key == 'notes':
+        return st.text_area("備註", placeholder="其他相關資訊", key=wkey)
+    return ''
 # 匯入現代化 UI 元件
 from modern_ui import apply_modern_css, create_header, create_status_bar, create_navigation_sidebar, create_quick_actions
 
@@ -241,35 +309,40 @@ def show_scan_interface():
             history = df[df['qr_id'] == qr_id_input].sort_values('timestamp', ascending=False)
             st.subheader("歷史記錄")
             if not history.empty:
-                st.dataframe(history[['stage', 'timestamp', 'operator', 'weight_kg']], use_container_width=True)
+                st.dataframe(
+                    history[['stage', 'timestamp', 'operator', 'weight_kg', 'recycled_ratio']],
+                    use_container_width=True)
         elif qr_id_input and not valid_qr:
             st.error("❌ QR碼不存在，請檢查輸入")
-    
+
     with col2:
         if qr_id_input and valid_qr:
             st.subheader("登錄新資料")
-            
+
+            # stage 選擇放在 form 外:選不同 stage → 立即重繪對應欄位(stage 驅動表單)。
+            # 加分:此 QR 已登過「出廠」→ 預設跳到下一步「後端機構接收」,減少選錯。
+            hist_stages = set(df[df['qr_id'] == qr_id_input]['stage'])
+            default_idx = (SCAN_STAGES.index(STAGE_BACKEND_IN)
+                           if STAGE_FACTORY_OUT in hist_stages else 0)
+            stage = st.selectbox("處理階段", SCAN_STAGES, index=default_idx, key="scan_stage")
+
+            primary = _PRIMARY_FIELDS.get(stage, ['weight_kg'])
+            st.caption(f"此階段需填:{('、'.join(_field_labels(primary, stage)))};其餘為選填")
+
             with st.form("data_entry_form"):
-                stage = st.selectbox(
-                    "處理階段",
-                    ["出廠", "運輸", "後端機構接收", "再生處理", "產品製造", "銷售"]
-                )
-                
-                operator = st.text_input("操作人員", placeholder="輸入操作人員姓名")
-                
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    weight_kg = st.number_input("重量 (公斤)", min_value=0.0, step=0.1)
-                with col_b:
-                    location = st.text_input("地點", placeholder="處理地點")
-                
-                source = st.text_input("來源", placeholder="例：某某回收廠")
-                destination = st.text_input("去向", placeholder="例：某某再生廠")
-                product_model = st.text_input("產品型號", placeholder="例：再生塑膠粒 PP-001")
-                notes = st.text_area("備註", placeholder="其他相關資訊")
-                
+                operator = st.text_input("操作人員 *", placeholder="輸入操作人員姓名")
+
+                vals = {k: '' for k in _ALL_EDITABLE}
+                for k in primary:
+                    vals[k] = _render_scan_field(k, stage)
+
+                extra = [k for k in _ALL_EDITABLE if k not in primary]
+                with st.expander("▸ 更多欄位（選填）"):
+                    for k in extra:
+                        vals[k] = _render_scan_field(k, stage)
+
                 submit_button = st.form_submit_button("🔄 提交資料", type="primary")
-                
+
                 if submit_button:
                     if operator:
                         new_record = {
@@ -278,18 +351,13 @@ def show_scan_interface():
                             'stage': stage,
                             'operator': operator,
                             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'weight_kg': weight_kg if weight_kg > 0 else '',
-                            'source': source,
-                            'destination': destination,
-                            'product_model': product_model,
-                            'notes': notes,
-                            'location': location
                         }
+                        new_record.update(vals)
 
                         # 單列 append(並發安全),不再 load 整表覆寫
                         get_data_manager().append_record(new_record)
 
-                        st.success("✅ 資料已成功登錄！")
+                        st.success(f"✅ 已登錄「{stage}」記錄(操作人員:{operator})")
                         st.rerun()
                     else:
                         st.error("請輸入操作人員姓名")
@@ -681,6 +749,68 @@ ID: {qr_id}
             </div>
             """, unsafe_allow_html=True)
 
+def _fmt_kg(v):
+    return "—" if v is None else f"{v:g} kg"
+
+
+def render_mass_balance(df, batch):
+    """依 batch 呈現質量平衡:放大的「成品再生含量 %」主數字 + 歐盟門檻顏色 + tier 標記
+    + 進料→產出・損耗 流向。語意由 schema.compute_mass_balance 統一計算。"""
+    mb = compute_mass_balance(df, batch)
+
+    # 空狀態:資料不足
+    if mb['recycled_content'] is None and mb['feed_kg'] is None and mb['output_kg'] is None:
+        st.info("📭 此批次尚無足夠資料計算質量平衡(需要出廠/再生處理等階段的重量或再生含量)")
+        return
+
+    color_map = {'red': '#ef4444', 'amber': '#f59e0b', 'green': '#10b981', 'gray': '#9ca3af'}
+    rc = mb['recycled_content']
+    color = color_map[threshold_color(rc)]
+    if rc is None:
+        headline, verdict = "未填", "尚無成品再生含量資料"
+    else:
+        if rc >= EU_THRESHOLD_HIGH:
+            verdict = f"✅ 達歐盟 {EU_THRESHOLD_HIGH:g}% 門檻"
+        elif rc >= EU_THRESHOLD_LOW:
+            verdict = f"🟠 達 {EU_THRESHOLD_LOW:g}% 未達 {EU_THRESHOLD_HIGH:g}%"
+        else:
+            verdict = f"🔴 未達歐盟 {EU_THRESHOLD_LOW:g}% 門檻"
+        headline = f"{rc:g}%"
+    tier = mb['data_tier'] or "未標示"
+
+    st.markdown(f"""
+    <div class="custom-card" style="border-top: 4px solid {color}; text-align: center;">
+        <div style="color:#6b7280; font-size:0.875rem; letter-spacing:0.05em;">成品再生含量</div>
+        <div style="font-size:3rem; font-weight:700; color:{color}; line-height:1.1;">{headline}</div>
+        <div style="color:{color}; font-weight:600;">{verdict}</div>
+        <div style="margin-top:0.5rem;">
+            <span style="display:inline-block; padding:0.15rem 0.6rem; border-radius:9999px;
+                  background:#f3f4f6; color:#374151; font-size:0.8rem;">
+                資料可信度:{tier}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if mb['data_tier'] == DATA_TIER_OPTIONS[1]:  # 推估(二級)
+        st.caption("⚠️ 此數字為**推估(二級)**資料,可信度低於實測,試辦報告須據此標示。")
+
+    # 流向:進料 → 產出・損耗
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("進料(出廠)", _fmt_kg(mb['feed_kg']))
+    out_label = "產出" + (f"（{mb['output_stage']}）" if mb['output_stage'] else "")
+    c2.metric(out_label, _fmt_kg(mb['output_kg']))
+    c3.metric("損耗", _fmt_kg(mb['loss_kg']))
+    c4.metric("回收率", "—" if mb['recovery_rate'] is None else f"{mb['recovery_rate']:g}%")
+
+    extra = []
+    if mb['received_kg'] is not None:
+        match = "✅ 一致" if (mb['feed_kg'] is not None and abs(mb['received_kg'] - mb['feed_kg']) < 1e-6) else "⚠️ 與出廠不一致"
+        extra.append(f"後端收料(對帳):{_fmt_kg(mb['received_kg'])} {match}")
+    if mb['source_purity'] is not None:
+        extra.append(f"再生料來源純度(出廠端,不對門檻):{mb['source_purity']:g}%")
+    if extra:
+        st.caption("　|　".join(extra))
+
+
 def show_query_interface():
     """履歷查詢功能"""
     st.header("🔍 履歷查詢")
@@ -702,7 +832,12 @@ def show_query_interface():
             # 階段篩選
             available_stages = df['stage'].unique()
             selected_stages = st.multiselect("選擇階段", available_stages, default=available_stages)
-            
+
+            # 物料類別篩選(新欄;強制轉字串去空,避免混型)
+            materials = sorted({str(m).strip() for m in df['material_type']
+                                if str(m).strip() and str(m).strip().lower() != 'nan'})
+            selected_materials = st.multiselect("物料類別", materials, default=materials) if materials else []
+
             # 日期範圍
             st.subheader("日期範圍")
             date_filter = st.checkbox("啟用日期篩選")
@@ -722,7 +857,10 @@ def show_query_interface():
             
             if selected_stages:
                 filtered_df = filtered_df[filtered_df['stage'].isin(selected_stages)]
-            
+
+            if selected_materials:
+                filtered_df = filtered_df[filtered_df['material_type'].isin(selected_materials)]
+
             if date_filter and 'start_date' in locals() and 'end_date' in locals():
                 filtered_df['date'] = pd.to_datetime(filtered_df['timestamp']).dt.date
                 filtered_df = filtered_df[
@@ -737,23 +875,37 @@ def show_query_interface():
                     use_container_width=True
                 )
                 
+                # 質量平衡檢視(依該 QR 對應的 batch)
+                if selected_qr != "全部":
+                    batch = df[df['qr_id'] == selected_qr]['batch_name']
+                    batch = batch.iloc[0] if not batch.empty else None
+                    if batch:
+                        st.subheader(f"⚖️ 質量平衡 — 批次「{batch}」")
+                        render_mass_balance(df, batch)
+
                 # 履歷視覺化
                 if selected_qr != "全部":
                     st.subheader(f"QR碼 {selected_qr} 的完整履歷")
-                    
+
                     qr_data = filtered_df[filtered_df['qr_id'] == selected_qr].sort_values('timestamp')
-                    
+
                     for idx, row in qr_data.iterrows():
+                        ratio_name = "再生料來源純度" if row['stage'] == STAGE_FACTORY_OUT else "成品再生含量"
                         with st.expander(f"📅 {row['timestamp']} - {row['stage']}"):
                             col_a, col_b = st.columns(2)
                             with col_a:
                                 st.write(f"**操作人員：** {row['operator']}")
                                 st.write(f"**重量：** {row['weight_kg']} 公斤" if row['weight_kg'] else "**重量：** 未記錄")
                                 st.write(f"**地點：** {row['location']}" if row['location'] else "**地點：** 未記錄")
+                                st.write(f"**{ratio_name}：** {row['recycled_ratio']}%" if str(row['recycled_ratio']).strip() else f"**{ratio_name}：** 未記錄")
+                                st.write(f"**資料可信度：** {row['data_tier']}" if str(row['data_tier']).strip() else "**資料可信度：** 未標示")
                             with col_b:
                                 st.write(f"**來源：** {row['source']}" if row['source'] else "**來源：** 未記錄")
                                 st.write(f"**去向：** {row['destination']}" if row['destination'] else "**去向：** 未記錄")
-                                st.write(f"**產品型號：** {row['product_model']}" if row['product_model'] else "**產品型號：** 未記錄")
+                                st.write(f"**用途／產品：** {row['product_model']}" if row['product_model'] else "**用途／產品：** 未記錄")
+                                st.write(f"**物料類別：** {row['material_type']}" if str(row['material_type']).strip() else "**物料類別：** 未記錄")
+                                st.write(f"**RRMS單號：** {row['rrms_doc_id']}" if str(row['rrms_doc_id']).strip() else "**RRMS單號：** 未記錄")
+                                st.write(f"**閉環來源：** {row['is_elv_closedloop']}" if str(row['is_elv_closedloop']).strip() else "**閉環來源：** 未記錄")
                             if row['notes']:
                                 st.write(f"**備註：** {row['notes']}")
             else:
