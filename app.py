@@ -96,12 +96,38 @@ st.set_page_config(
 # 應用現代化樣式
 apply_modern_css()
 
-# 預設帳號密碼 (實際使用時應存放在安全的地方)
-DEFAULT_USERS = {
-    "admin": "admin123",
-    "operator": "op2024",
-    "viewer": "view2024"
+# ─── 帳號來源:secrets / 環境變數 優先,未設定才退回展示帳號 ──────────────
+# 規劃方 must:不可把自己鎖在 demo 外。有設定就用設定的;沒設定就 fallback 到
+# 明顯是展示用的弱帳號,並在 UI 標「展示模式」。README 只寫如何設定、不印真密碼。
+DEMO_USERS = {
+    "admin": "demo-admin",
+    "operator": "demo-operator",
+    "viewer": "demo-viewer",
 }
+
+
+def load_users():
+    """回傳 (帳號字典, 是否展示模式)。
+
+    每個角色密碼來源優先序:st.secrets[auth][role] > 環境變數 APP_<ROLE>_PW > 展示密碼。
+    只要有任一角色被外部設定覆寫,就視為已配置(非展示模式)。
+    """
+    users = dict(DEMO_USERS)
+    overridden = False
+    try:
+        sec = dict(st.secrets["auth"]) if ("auth" in st.secrets) else {}
+    except Exception:
+        sec = {}
+    for role in DEMO_USERS:
+        if role in sec and str(sec[role]).strip():
+            users[role] = str(sec[role])
+            overridden = True
+        else:
+            env_pw = os.getenv(f"APP_{role.upper()}_PW")
+            if env_pw and env_pw.strip():
+                users[role] = env_pw
+                overridden = True
+    return users, (not overridden)
 
 # 資料檔案路徑
 DATA_FILE = "plastic_trace_data.csv"
@@ -117,7 +143,8 @@ def get_user_role():
 
 def login_user(username, password):
     """使用者登入"""
-    if username in DEFAULT_USERS and DEFAULT_USERS[username] == password:
+    users, _ = load_users()
+    if username in users and users[username] == password:
         st.session_state['logged_in'] = True
         st.session_state['username'] = username
         # 設定角色
@@ -177,28 +204,33 @@ def show_login_form():
                     st.error("❌ 帳號或密碼錯誤")
         
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        # 測試帳號資訊卡片
-        st.markdown("""
-        <div class="feature-card" style="margin-top: 2rem;">
-            <h4 style="margin: 0 0 1rem 0; color: #1f2937;">📋 測試帳號</h4>
-            <div style="display: grid; gap: 0.5rem;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span><strong>管理員：</strong></span>
-                    <span>admin / admin123</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span><strong>操作員：</strong></span>
-                    <span>operator / op2024</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span><strong>查看者：</strong></span>
-                    <span>viewer / view2024</span>
-                </div>
+
+        # 帳號提示:展示模式才印出展示帳號;已配置正式帳號則不顯示任何密碼
+        users, is_demo = load_users()
+        if is_demo:
+            rows = "".join(
+                f'<div style="display:flex; justify-content:space-between;">'
+                f'<span><strong>{label}：</strong></span><span>{role} / {users[role]}</span></div>'
+                for role, label in [("admin", "管理員"), ("operator", "操作員"), ("viewer", "查看者")]
+            )
+            st.markdown(f"""
+            <div class="feature-card" style="margin-top: 2rem;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">🧪 展示模式帳號</h4>
+                <p style="margin:0 0 0.75rem 0; color:#92400e; font-size:0.85rem;">
+                    尚未設定正式帳號,目前使用展示帳號。正式上線請依 README 設定
+                    <code>st.secrets</code> 或環境變數。</p>
+                <div style="display: grid; gap: 0.5rem;">{rows}</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="feature-card" style="margin-top: 2rem;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #1f2937;">🔐 正式帳號模式</h4>
+                <p style="margin:0; color:#6b7280; font-size:0.85rem;">
+                    請使用管理者設定的帳號登入(admin／operator／viewer)。</p>
+            </div>
+            """, unsafe_allow_html=True)
+
         st.markdown("""
         <div class="custom-card" style="margin-top: 1rem; background: #f0f9ff;">
             <p style="margin: 0; color: #0369a1; text-align: center;">
@@ -310,7 +342,7 @@ def show_scan_interface():
             st.subheader("歷史記錄")
             if not history.empty:
                 st.dataframe(
-                    history[['stage', 'timestamp', 'operator', 'weight_kg', 'recycled_ratio']],
+                    history[['stage', 'timestamp', 'operator', 'weight_kg', 'recycled_ratio']].astype(str),
                     use_container_width=True)
         elif qr_id_input and not valid_qr:
             st.error("❌ QR碼不存在，請檢查輸入")
@@ -369,7 +401,11 @@ def show_main_interface():
     
     # 創建頁首
     create_header()
-    
+
+    # 展示模式提示(未設定正式帳號時)
+    if load_users()[1]:
+        st.warning("🧪 展示模式:目前使用展示帳號。正式上線請依 README 設定 st.secrets／環境變數。", icon="⚠️")
+
     # 用戶資訊和登出按鈕
     col1, col2 = st.columns([4, 1])
     with col2:
@@ -871,7 +907,7 @@ def show_query_interface():
             # 顯示結果
             if not filtered_df.empty:
                 st.dataframe(
-                    filtered_df.sort_values('timestamp', ascending=False),
+                    filtered_df.sort_values('timestamp', ascending=False).astype(str),
                     use_container_width=True
                 )
                 
