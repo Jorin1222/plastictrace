@@ -69,6 +69,20 @@ streamlit run app.py
 
 > 本專案不在程式碼或文件中存放真實密碼。詳見 `SECURITY.md`。
 
+## 🚀 Streamlit Cloud 上線檢查清單
+
+部署在 <https://plastictracetest.streamlit.app/>,push 到 `main` 後會自動重新部署
+(沒更新就到 [share.streamlit.io](https://share.streamlit.io) 後台按 **Reboot app**)。
+**對外試辦前務必逐項確認:**
+
+1. **Sharing 設 Public** — App → Settings → Sharing 設為「Anyone with the link」。
+   若設私有,現場人員掃 QR 碼會被 Streamlit 登入閘門擋住、無法登錄。
+2. **設定 `[auth]` secrets** — App → Settings → Secrets 貼上 `.secrets_example.toml`
+   的 `[auth]` 區塊並填強密碼。未設定時 app 會進「展示模式」(帳號 `admin/demo-admin` 等)。
+3. **Google Sheets 先備份** — 第一次用新版存檔會把試算表表頭從 11 欄升成 16 欄,
+   升級前先在 Google 試算表「檔案 → 下載」存一份。
+4. **確認版本** — 登入後到「系統管理 → 系統資訊」看 git commit,對照 GitHub 最新 commit。
+
 ## 📞 技術支援
 如需協助或有任何問題，請聯繫開發團隊。
 

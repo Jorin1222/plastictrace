@@ -141,6 +141,38 @@ def get_user_role():
     """獲取當前使用者角色"""
     return st.session_state.get('user_role', 'guest')
 
+def get_version_info():
+    """回傳 (git commit 短碼, 該 commit 日期) 供「系統資訊」顯示實際部署版本。
+
+    先試 git 子程序;Streamlit Cloud 多半可用。不行則直接讀 .git/HEAD 解析,
+    都失敗回 ('未知','未知')。這樣網頁上一眼就能對照 GitHub HEAD 是否最新。
+    """
+    import subprocess
+    root = os.path.dirname(os.path.abspath(__file__))
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=root,
+            stderr=subprocess.DEVNULL, text=True).strip()
+        date = subprocess.check_output(
+            ["git", "log", "-1", "--format=%cd", "--date=format:%Y-%m-%d %H:%M"],
+            cwd=root, stderr=subprocess.DEVNULL, text=True).strip()
+        if commit:
+            return commit, (date or "未知")
+    except Exception:
+        pass
+    # 後備:直接讀 .git
+    try:
+        head = open(os.path.join(root, ".git", "HEAD"), encoding="utf-8").read().strip()
+        if head.startswith("ref:"):
+            ref = head.split(" ", 1)[1].strip()
+            commit = open(os.path.join(root, ".git", ref), encoding="utf-8").read().strip()
+        else:
+            commit = head
+        return commit[:7], "(由 .git 讀取,無日期)"
+    except Exception:
+        return "未知", "未知"
+
+
 def login_user(username, password):
     """使用者登入"""
     users, _ = load_users()
@@ -1191,11 +1223,13 @@ def show_admin_interface():
         env_status = "Streamlit Cloud" if is_streamlit_cloud() else "本地環境"
         st.info(f"部署環境：{env_status}")
         
-        # 系統狀態
+        # 系統狀態(顯示實際 git commit,方便對照網頁是否為最新部署)
+        commit, commit_date = get_version_info()
         st.write("**版本資訊：**")
-        st.write("- 平台版本：v1.0.0")
-        st.write("- 最後更新：2025-08-04")
-        st.write("- 版權：財團法人台灣產業服務基金會")
+        st.write(f"- 版本(git commit):`{commit}`")
+        st.write(f"- 版本日期:{commit_date}")
+        st.caption("對照 GitHub 最新 commit 即可確認此網頁是否為最新部署。")
+        st.write("- 版權:財團法人台灣產業服務基金會")
 
 # 主程式邏輯 - 權限控制
 def main():
