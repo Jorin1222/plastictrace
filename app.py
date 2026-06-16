@@ -323,6 +323,176 @@ def get_download_link(file_buffer, filename, text):
     href = f'<a href="data:image/png;base64,{b64}" download="{filename}">{text}</a>'
     return href
 
+
+_CJK_FONT_NAME = None
+
+
+def _register_cjk_font():
+    """註冊一個「內嵌」中文 TTF 並回傳字型名;找不到回 None。
+
+    內嵌(把字形烤進 PDF)才能保證在任何機器、任何閱讀器都正確顯示——
+    非內嵌的 CID 字型會依賴閱讀器自行代換,容易變亂碼。
+    雲端靠 packages.txt 安裝 fonts-noto-cjk;本機用系統既有中文字型。
+    """
+    global _CJK_FONT_NAME
+    if _CJK_FONT_NAME:
+        return _CJK_FONT_NAME
+    import glob
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    # ⚠️ 只用 OFL 開源授權字型(Noto / 思源)——可自由商用且可內嵌進散佈的 PDF。
+    # 絕不內嵌微軟正黑體/細明體/標楷體、PingFang 等專有字型(授權不允許散佈)。
+    # 專案內附字型(若有,優先;OFL 可隨 repo 散佈)
+    _here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        (os.path.join(_here, "fonts", "NotoSansTC-Regular.ttf"), None),
+        (os.path.join(_here, "fonts", "NotoSansCJK-Regular.ttc"), 0),
+        # 雲端 Debian(packages.txt 安裝 fonts-noto-cjk,OFL)
+        ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 0),
+        ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", 0),
+        ("/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc", 0),
+        # 本機 Windows 內建的 Noto(OFL),僅供開發預覽
+        ("C:/Windows/Fonts/NotoSansTC-VF.ttf", None),
+        ("C:/Windows/Fonts/NotoSansCJKtc-Regular.otf", None),
+    ]
+    # packages.txt 安裝路徑可能不同 → 動態掃描 Noto(OFL)補進候選
+    for pat in ("/usr/share/fonts/**/Noto*CJK*.ttc", "/usr/share/fonts/**/Noto*CJK*.otf"):
+        for p in glob.glob(pat, recursive=True):
+            candidates.append((p, 0))
+
+    for path, idx in candidates:
+        if path and os.path.exists(path):
+            try:
+                font_obj = TTFont("CJK", path) if idx is None else TTFont("CJK", path, subfontIndex=idx)
+                pdfmetrics.registerFont(font_obj)
+                _CJK_FONT_NAME = "CJK"
+                return _CJK_FONT_NAME
+            except Exception:
+                continue
+    return None
+
+
+def generate_qr_label_pdf(qr_id, batch_name, base_url=None):
+    """產生「單張」QR 列印標籤 PDF(A4,一個大 QR + 批次資訊)。
+
+    符合「一次產一批、馬上印這一張」的流程:QR 夠大好掃,批次名稱醒目,
+    含手寫「日期/承辦」欄。回傳 BytesIO。
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+
+    font = _register_cjk_font() or 'Helvetica'
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    pw, ph = A4
+    cx = pw / 2
+
+    # 外框
+    c.setStrokeColorRGB(0.85, 0.85, 0.85)
+    c.rect(15 * mm, 15 * mm, pw - 30 * mm, ph - 30 * mm)
+
+    # 頁首
+    c.setFont(font, 14)
+    c.drawCentredString(cx, ph - 30 * mm, "ELV 廢塑膠產銷履歷")
+
+    # 大 QR(約 95mm,遠距也好掃)
+    qr_size = 95 * mm
+    qr_buf, _ = generate_qr_code(qr_id, base_url)
+    qr_y = ph - 45 * mm - qr_size
+    c.drawImage(ImageReader(qr_buf), cx - qr_size / 2, qr_y, qr_size, qr_size)
+
+    # 批次名稱(醒目)
+    ty = qr_y - 14 * mm
+    c.setFont(font, 20)
+    c.drawCentredString(cx, ty, (batch_name or '')[:24])
+    c.setFont(font, 12)
+    c.drawCentredString(cx, ty - 9 * mm, f"批次 ID:{qr_id}")
+    c.setFont(font, 13)
+    c.drawCentredString(cx, ty - 20 * mm, "手機掃描此 QR 碼即可登錄產銷履歷")
+    c.setFont(font, 11)
+    c.drawCentredString(cx, ty - 34 * mm, "日期:____________________")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf
+
+
+def generate_qr_sheet_pdf(qr_items, base_url=None):
+    """產生可直接列印的 A4 QR 套表 PDF(多格;次要功能,需要時一次印全部)。
+
+    qr_items: 可疊代的 (qr_id, batch_name)。每格 = QR 圖 + 批次名稱 + ID +
+    「手機掃描登錄」+ 手寫欄,3×4 一頁、淡色裁切線,印出剪下即可貼到料件上。
+    回傳 BytesIO。
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.utils import ImageReader
+
+    # 內嵌中文 TTF(找不到才退回 Helvetica,中文會缺字但不致 crash)
+    font = _register_cjk_font() or 'Helvetica'
+
+    items = list(qr_items)
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    pw, ph = A4
+    side, top_m, bot_m = 12 * mm, 18 * mm, 12 * mm
+    cols, rows = 3, 4
+    per_page = cols * rows
+    cell_w = (pw - 2 * side) / cols
+    cell_h = (ph - top_m - bot_m) / rows
+    qr_size = 36 * mm
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    def draw_header():
+        c.setFont(font, 13)
+        c.drawString(side, ph - 12 * mm, "ELV 廢塑膠產銷履歷 — QR 套表")
+        c.setFont(font, 8)
+        c.drawRightString(pw - side, ph - 12 * mm, f"產生日期:{today}")
+
+    draw_header()
+    for idx, (qr_id, batch_name) in enumerate(items):
+        pos = idx % per_page
+        if idx > 0 and pos == 0:
+            c.showPage()
+            draw_header()
+        col, row = pos % cols, pos // cols
+        x0 = side + col * cell_w
+        y_top = ph - top_m - row * cell_h
+        cx = x0 + cell_w / 2
+
+        # 裁切框(淡虛線)
+        c.saveState()
+        c.setDash(1, 2)
+        c.setStrokeColorRGB(0.8, 0.8, 0.8)
+        c.rect(x0 + 1 * mm, y_top - cell_h + 1 * mm, cell_w - 2 * mm, cell_h - 2 * mm)
+        c.restoreState()
+
+        # QR 圖
+        qr_buf, _ = generate_qr_code(qr_id, base_url)
+        qr_y = y_top - 5 * mm - qr_size
+        c.drawImage(ImageReader(qr_buf), cx - qr_size / 2, qr_y, qr_size, qr_size)
+
+        # 文字
+        ty = qr_y - 5 * mm
+        c.setFont(font, 10)
+        c.drawCentredString(cx, ty, (batch_name or '')[:18])
+        c.setFont(font, 8)
+        c.drawCentredString(cx, ty - 4.5 * mm, f"ID: {qr_id}")
+        c.drawCentredString(cx, ty - 9 * mm, "手機掃描即可登錄產銷履歷")
+        c.setFont(font, 7)
+        c.drawCentredString(cx, ty - 14 * mm, "日期:____________")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf
+
+
 def show_scan_interface():
     """顯示掃描登錄介面（公開功能）"""
     # 如果不是掃描頁面，顯示標題
@@ -670,12 +840,26 @@ def show_qr_management():
                             st.info("🏠 **本地版本QR碼** - 僅限此電腦網路環境使用")
                             st.caption("📡 部署到 Streamlit Cloud 後將自動產生公開版本")
                         
-                        # 提供下載連結
+                        # 列印標籤(PDF,推薦):一個大 QR + 批次資訊,印出即可貼
+                        try:
+                            label_pdf = generate_qr_label_pdf(qr_id, batch_name)
+                            st.download_button(
+                                label="📄 下載這張 QR 列印標籤 (PDF,可直接印)",
+                                data=label_pdf.getvalue(),
+                                file_name=f"QR標籤_{qr_id}_{batch_name}.pdf",
+                                mime="application/pdf",
+                                type="primary",
+                                use_container_width=True,
+                            )
+                        except Exception as e:
+                            st.error(f"❌ 標籤產生失敗:{str(e)}")
+
+                        # 也可下載純 QR 圖檔
                         st.markdown(
-                            get_download_link(qr_buffer, f"QR_{qr_id}_{batch_name}.png", "📥 下載QR碼"),
+                            get_download_link(qr_buffer, f"QR_{qr_id}_{batch_name}.png", "📥 或下載純 QR 圖檔 (PNG)"),
                             unsafe_allow_html=True
                         )
-                        
+
                         # 將基本資訊存入資料庫(單列 append)
                         new_record = {
                             'qr_id': qr_id,
@@ -750,22 +934,25 @@ def show_qr_management():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                if st.button("📥 下載單個QR碼", type="secondary", use_container_width=True):
-                    if selected_qr:
-                        # 產生選中的QR碼
-                        qr_buffer, qr_url = generate_qr_code(selected_qr)
-                        batch_name = qr_codes[qr_codes['qr_id']==selected_qr]['batch_name'].iloc[0]
-                        
-                        # 顯示QR碼
-                        st.image(qr_buffer, caption=f"QR碼: {selected_qr}", width=150)
-                        
-                        # 提供下載連結
-                        st.markdown(
-                            get_download_link(qr_buffer, f"QR_{selected_qr}_{batch_name}.png", "📥 點擊下載"),
-                            unsafe_allow_html=True
+                if selected_qr:
+                    _bn = qr_codes[qr_codes['qr_id'] == selected_qr]['batch_name'].iloc[0]
+                    try:
+                        _lbl = generate_qr_label_pdf(selected_qr, _bn)
+                        st.download_button(
+                            "📄 下載此 QR 列印標籤 (PDF)",
+                            data=_lbl.getvalue(),
+                            file_name=f"QR標籤_{selected_qr}_{_bn}.pdf",
+                            mime="application/pdf",
+                            type="primary",
+                            use_container_width=True,
                         )
-                        
-                        st.info(f"🔗 QR碼網址：{qr_url}")
+                    except Exception as e:
+                        st.error(f"❌ 標籤產生失敗:{str(e)}")
+                    _qb, _ = generate_qr_code(selected_qr)
+                    st.markdown(
+                        get_download_link(_qb, f"QR_{selected_qr}_{_bn}.png", "📥 或下載純 QR 圖檔 (PNG)"),
+                        unsafe_allow_html=True
+                    )
             
             with col_b:
                 if st.button("📦 批量下載所有QR碼", type="secondary", use_container_width=True):
@@ -809,6 +996,24 @@ ID: {qr_id}
                     )
                     
                     st.success(f"✅ 已準備 {len(qr_codes)} 個QR碼的ZIP檔案")
+
+            # ── 次要:需要時一次把全部批次印成多格套表(3×4/頁) ──
+            st.markdown("---")
+            with st.expander("📄 需要時:下載「全部批次」列印套表 (PDF,3×4/頁)"):
+                st.caption("適合一次補印多張。平常一次產一批,用上方「列印標籤」即可。")
+                try:
+                    pdf_buf = generate_qr_sheet_pdf(
+                        list(zip(qr_codes['qr_id'], qr_codes['batch_name'])))
+                    st.download_button(
+                        label="📄 下載全部 QR 套表 (PDF)",
+                        data=pdf_buf.getvalue(),
+                        file_name=f"QR套表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        mime="application/pdf",
+                        type="secondary",
+                        use_container_width=True,
+                    )
+                except Exception as e:
+                    st.error(f"❌ 套表產生失敗:{str(e)}")
         else:
             st.markdown("""
             <div class="custom-card" style="text-align: center; padding: 2rem;">
